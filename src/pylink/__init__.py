@@ -18,7 +18,7 @@ from .simulation import (
     StepSnapshot,
 )
 from .solver import SciPySolver, Solver
-from .system import Connection, Endpoint, System
+from .system import Connection, Endpoint, Subsystem, System
 
 __all__ = [
     "AlgebraicLoopError",
@@ -43,6 +43,7 @@ __all__ = [
     "Simulator",
     "Solver",
     "StepSnapshot",
+    "Subsystem",
     "System",
     "ValidationReport",
 ]

@@ -25,6 +25,10 @@ dev = [
 addopts = "-q"
 pythonpath = ["src"]
 testpaths = ["tests"]
+markers = [
+  "performance: performance-oriented tests for large generated models",
+  "slow: slower-running tests for large generated models",
+]
 
 [tool.setuptools.package-dir]
 "" = "src"

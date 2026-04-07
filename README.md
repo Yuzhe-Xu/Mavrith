@@ -11,6 +11,7 @@ an extra graphical tool or a large built-in block catalog.
 ## What It Does
 
 - Pure Python DSL for building systems with blocks and connections
+- Hierarchical `Subsystem` composition with compile-time flattening
 - Stateless, discrete-state, and continuous-state block base classes
 - Port dtype/shape declarations with `SignalSpec`
 - Connection validation and direct-feedthrough algebraic loop detection
@@ -33,6 +34,7 @@ The current repository implements a usable simulation kernel rather than just a
 prototype API. The core workflow is in place:
 
 - build systems in pure Python with explicit ports and connections
+- group reusable model fragments with `Subsystem` and flatten them at compile time
 - validate graph structure, algebraic-loop constraints, time-grid constraints,
   and signal dtype/shape compatibility
 - simulate mixed continuous/discrete systems with deterministic fixed-step
@@ -220,6 +222,16 @@ The repository examples follow the same style on purpose:
 - `examples/mass_spring_damper.py`
   - sampled PD control + force saturation + disturbance pulse
   - useful for multi-output plants and settling behavior
+- `examples/aircraft_pitch_digital.py`
+  - sampled state-feedback controller for a continuous aircraft pitch plant
+- `examples/inverted_pendulum_lqr.py`
+  - hierarchical digital LQR for the classic cart-pendulum benchmark
+- `examples/cstr_temperature_control.py`
+  - nonlinear CSTR temperature regulation with a sampled PI controller
+- `examples/quadruple_tank.py`
+  - decentralized multivariable level control for the quadruple-tank benchmark
+- `examples/large_hierarchical_benchmark.py`
+  - generated deep subsystem hierarchy for compile and runtime scaling checks
 
 Common modifications to these examples:
 

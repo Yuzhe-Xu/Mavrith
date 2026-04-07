@@ -5,6 +5,7 @@ from typing import Any, Mapping, Protocol
 
 import numpy as np
 
+from ._hierarchy import flatten_system
 from ._model import build_model_summary
 from .compiler import ExecutionPlan, _analyze_system, _build_execution_plan, compile_system
 from .core import Block, ContinuousBlock, DiscreteBlock, ExecutionContext, SignalSpec
@@ -173,39 +174,62 @@ class Simulator:
         system,
         config: SimulationConfig | None = None,
     ) -> ValidationReport:
-        analysis = _analyze_system(system)
-        diagnostics = list(analysis.diagnostics)
-        summary = build_model_summary(
-            analysis.model,
-            block_order=analysis.block_order,
-            config=config,
-        )
+        flatten_result = flatten_system(system)
+        diagnostics = list(flatten_result.diagnostics)
 
-        if analysis.block_order is not None:
-            plan = _build_execution_plan(system, analysis)
-
-            if config is not None:
-                diagnostics.extend(self._collect_time_grid_diagnostics(plan, config))
-
-            discrete_states, discrete_state_diagnostics = self._collect_discrete_state_diagnostics(plan)
-            continuous_states, continuous_state_diagnostics = self._collect_continuous_state_diagnostics(
-                plan
+        if flatten_result.flat_system is None:
+            empty_system = type(system)(system.name)
+            analysis = _analyze_system(empty_system)
+            summary = build_model_summary(
+                analysis.model,
+                block_order=None,
+                config=config,
+                hierarchy=flatten_result.hierarchy_summary,
             )
-            diagnostics.extend(discrete_state_diagnostics)
-            diagnostics.extend(continuous_state_diagnostics)
+        else:
+            analysis = _analyze_system(flatten_result.flat_system)
+            diagnostics.extend(analysis.diagnostics)
+            summary = build_model_summary(
+                analysis.model,
+                block_order=analysis.block_order,
+                config=config,
+                hierarchy=flatten_result.hierarchy_summary,
+            )
 
-            if not analysis.diagnostics and not discrete_state_diagnostics and not continuous_state_diagnostics:
-                diagnostics.extend(
-                    self._collect_initial_signal_diagnostics(
-                        plan,
-                        config=config,
-                        discrete_states=discrete_states,
-                        continuous_states=continuous_states,
-                    )
+            if analysis.block_order is not None:
+                plan = _build_execution_plan(
+                    flatten_result.flat_system,
+                    analysis,
+                    hierarchy_summary=flatten_result.hierarchy_summary,
                 )
 
+                if config is not None:
+                    diagnostics.extend(self._collect_time_grid_diagnostics(plan, config))
+
+                discrete_states, discrete_state_diagnostics = self._collect_discrete_state_diagnostics(plan)
+                continuous_states, continuous_state_diagnostics = self._collect_continuous_state_diagnostics(
+                    plan
+                )
+                diagnostics.extend(discrete_state_diagnostics)
+                diagnostics.extend(continuous_state_diagnostics)
+
+                if (
+                    not flatten_result.diagnostics
+                    and not analysis.diagnostics
+                    and not discrete_state_diagnostics
+                    and not continuous_state_diagnostics
+                ):
+                    diagnostics.extend(
+                        self._collect_initial_signal_diagnostics(
+                            plan,
+                            config=config,
+                            discrete_states=discrete_states,
+                            continuous_states=continuous_states,
+                        )
+                    )
+
         return ValidationReport(
-            system_name=analysis.model.name,
+            system_name=system.name,
             diagnostics=tuple(diagnostics),
             _summary_data=summary,
         )

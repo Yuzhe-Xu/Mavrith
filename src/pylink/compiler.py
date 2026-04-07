@@ -5,6 +5,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from ._hierarchy import flatten_system
 from ._model import _NormalizedModel, build_model_summary, normalize_system
 from .diagnostics import Diagnostic
 from .errors import AlgebraicLoopError, ModelValidationError
@@ -344,7 +345,12 @@ def _analyze_system(system: System) -> _ModelAnalysis:
     return _analyze_model(normalize_system(system))
 
 
-def _build_execution_plan(system: System, analysis: _ModelAnalysis) -> ExecutionPlan:
+def _build_execution_plan(
+    system: System,
+    analysis: _ModelAnalysis,
+    *,
+    hierarchy_summary: dict[str, Any] | None = None,
+) -> ExecutionPlan:
     assert analysis.block_order is not None
     return ExecutionPlan(
         system=system,
@@ -357,12 +363,21 @@ def _build_execution_plan(system: System, analysis: _ModelAnalysis) -> Execution
             analysis.model,
             block_order=analysis.block_order,
             config=None,
+            hierarchy=hierarchy_summary,
         ),
     )
 
 
 def compile_system(system: System) -> ExecutionPlan:
-    analysis = _analyze_system(system)
+    flatten_result = flatten_system(system)
+    if flatten_result.diagnostics:
+        raise _analysis_error(flatten_result.diagnostics[0])
+    assert flatten_result.flat_system is not None
+    analysis = _analyze_system(flatten_result.flat_system)
     if analysis.diagnostics:
         raise _analysis_error(analysis.diagnostics[0])
-    return _build_execution_plan(system, analysis)
+    return _build_execution_plan(
+        flatten_result.flat_system,
+        analysis,
+        hierarchy_summary=flatten_result.hierarchy_summary,
+    )

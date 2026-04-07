@@ -49,6 +49,7 @@ from pylink import (
     SimulationObserver,
     Simulator,
     StepSnapshot,
+    Subsystem,
     System,
     ValidationReport,
 )
@@ -300,8 +301,8 @@ runtime state on the block instance.
 
 ## Building a system
 
-Create a `System`, add blocks by unique names, then connect ports using
-`"<block>.<port>"`.
+Create a `System`, add blocks or `Subsystem` objects by unique names, then
+connect ports using `"<component>.<port>"`.
 
 ```python
 system = System("demo")
@@ -312,11 +313,31 @@ system.connect("source.out", "plant.u")
 
 Rules:
 
-- block names must be unique
-- block names must not contain `.`
+- component names must be unique
+- component names must not contain `.` or `/`
 - `system.connect("src.out", "dst.in")` is directional
 - a target input cannot have more than one source
 - a source output may connect to many targets
+
+## Building a subsystem
+
+Use `Subsystem` when a reusable or nested fragment should expose a clean
+boundary to the outside world.
+
+```python
+controller = Subsystem("controller")
+controller.add_block("gain", Gain(2.0))
+controller.expose_input("u", "gain.u", spec=FLOAT_SCALAR)
+controller.expose_output("gain.y", "y", spec=FLOAT_SCALAR)
+```
+
+Rules:
+
+- `expose_input(name, target, ...)` binds one external subsystem input to one or more internal input targets
+- repeated `expose_input()` calls with the same name are allowed only when `required` and `spec` match
+- `expose_output(source, name, ...)` binds one external subsystem output to exactly one internal output source
+- subsystem ports must not contain `.` or `/`
+- subsystem hierarchy is organizational only; it is flattened before compile and run
 
 ## Running a simulation
 
@@ -446,11 +467,12 @@ When asked to model a system with `pylink`, follow this order:
 3. map each component to `Block`, `DiscreteBlock`, or `ContinuousBlock`
 4. declare ports explicitly, including `SignalSpec` when known
 5. decide `direct_feedthrough` correctly
-6. build the `System`
-7. connect using exact `"<block>.<port>"` strings
-8. validate with `Simulator.validate(system, config)` and inspect diagnostics first
-9. run with `SimulationConfig`
-10. optionally add an observer for inspection
+6. choose whether repeated structure should become a `Subsystem`
+7. build the `System` and any reusable `Subsystem` layers
+8. connect using exact `"<component>.<port>"` strings
+9. validate with `Simulator.validate(system, config)` and inspect diagnostics first
+10. run with `SimulationConfig`
+11. optionally add an observer for inspection
 
 ## Minimal templates
 

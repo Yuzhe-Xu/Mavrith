@@ -146,6 +146,7 @@ def build_model_summary(
     *,
     block_order: tuple[str, ...] | None,
     config: Any | None = None,
+    hierarchy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     discrete_blocks = [
         {"name": block.name, "sample_time": block.sample_time}
@@ -167,6 +168,7 @@ def build_model_summary(
         "blocks": [block.summary() for block in model.blocks],
         "connections": [connection.summary() for connection in model.connections],
         "execution_order": list(block_order) if block_order is not None else None,
+        "hierarchy": hierarchy,
         "stateful_blocks": {
             "discrete": discrete_blocks,
             "continuous": continuous_blocks,
