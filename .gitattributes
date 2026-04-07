@@ -1,0 +1,17 @@
+# Default text normalization
+* text=auto
+
+# Keep source and project files on LF across platforms
+*.py text eol=lf
+*.pyi text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.txt text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.lock text eol=lf
+
+# Windows-specific script formats
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
