@@ -6,7 +6,9 @@ from .core import (
     ExecutionContext,
     PortDirection,
     PortSpec,
+    SignalSpec,
 )
+from .diagnostics import Diagnostic, ValidationReport
 from .errors import AlgebraicLoopError, ModelValidationError, PylinkError, SimulationError
 from .simulation import (
     SimulationConfig,
@@ -23,6 +25,7 @@ __all__ = [
     "Block",
     "Connection",
     "ContinuousBlock",
+    "Diagnostic",
     "DiscreteBlock",
     "Endpoint",
     "ExecutionContext",
@@ -31,6 +34,7 @@ __all__ = [
     "PortDirection",
     "PortSpec",
     "PylinkError",
+    "SignalSpec",
     "SciPySolver",
     "SimulationConfig",
     "SimulationError",
@@ -40,4 +44,5 @@ __all__ = [
     "Solver",
     "StepSnapshot",
     "System",
+    "ValidationReport",
 ]

@@ -15,12 +15,16 @@ class Endpoint:
     def parse(cls, raw: str) -> "Endpoint":
         if raw.count(".") != 1:
             raise ModelValidationError(
-                f"Endpoint {raw!r} must use the format '<block>.<port>'."
+                f"Endpoint {raw!r} must use the format '<block>.<port>'.",
+                code="INVALID_ENDPOINT_FORMAT",
+                suggestion="Use endpoint strings like 'block_name.port_name'.",
             )
         block_name, port_name = raw.split(".", maxsplit=1)
         if not block_name or not port_name:
             raise ModelValidationError(
-                f"Endpoint {raw!r} must use the format '<block>.<port>'."
+                f"Endpoint {raw!r} must use the format '<block>.<port>'.",
+                code="INVALID_ENDPOINT_FORMAT",
+                suggestion="Use endpoint strings like 'block_name.port_name'.",
             )
         return cls(block_name=block_name, port_name=port_name)
 
@@ -45,11 +49,23 @@ class System:
 
     def add_block(self, name: str, block: Block) -> "System":
         if not name:
-            raise ModelValidationError("Block names must be non-empty.")
+            raise ModelValidationError(
+                "Block names must be non-empty.",
+                code="INVALID_BLOCK_NAME",
+                suggestion="Choose a non-empty block name before adding the block.",
+            )
         if "." in name:
-            raise ModelValidationError("Block names cannot contain '.'.")
+            raise ModelValidationError(
+                "Block names cannot contain '.'.",
+                code="INVALID_BLOCK_NAME",
+                suggestion="Remove '.' characters from the block name.",
+            )
         if name in self.blocks:
-            raise ModelValidationError(f"Block name {name!r} is already in use.")
+            raise ModelValidationError(
+                f"Block name {name!r} is already in use.",
+                code="DUPLICATE_BLOCK_NAME",
+                suggestion="Choose a unique block name before adding the block.",
+            )
         self.blocks[name] = block
         return self
 

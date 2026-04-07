@@ -5,14 +5,19 @@ from pylink import (
     ContinuousBlock,
     DiscreteBlock,
     PortSpec,
+    SignalSpec,
     SimulationConfig,
     Simulator,
     System,
 )
 
+FLOAT_SCALAR = SignalSpec(dtype="float", shape=())
+
 
 class Setpoint(Block):
-    outputs = (PortSpec.output("value"),)
+    """Stateless source block: the output is a fixed parameter."""
+
+    outputs = (PortSpec.output("value", spec=FLOAT_SCALAR),)
 
     def __init__(self, value: float) -> None:
         super().__init__(direct_feedthrough=False)
@@ -22,9 +27,27 @@ class Setpoint(Block):
         return self.value
 
 
+class ErrorBlock(Block):
+    """Stateless algebraic block: current error depends on current inputs."""
+
+    inputs = (
+        PortSpec.input("setpoint", spec=FLOAT_SCALAR),
+        PortSpec.input("measurement", spec=FLOAT_SCALAR),
+    )
+    outputs = (PortSpec.output("error", spec=FLOAT_SCALAR),)
+
+    def __init__(self) -> None:
+        super().__init__(direct_feedthrough=True)
+
+    def output(self, ctx, inputs):
+        return inputs["setpoint"] - inputs["measurement"]
+
+
 class ProportionalController(DiscreteBlock):
-    inputs = (PortSpec.input("error"),)
-    outputs = (PortSpec.output("command"),)
+    """Sampled controller: output comes from stored discrete state."""
+
+    inputs = (PortSpec.input("error", spec=FLOAT_SCALAR),)
+    outputs = (PortSpec.output("command", spec=FLOAT_SCALAR),)
 
     def __init__(self, gain: float, sample_time: float) -> None:
         super().__init__(sample_time=sample_time, direct_feedthrough=False)
@@ -41,8 +64,10 @@ class ProportionalController(DiscreteBlock):
 
 
 class FirstOrderPlant(ContinuousBlock):
-    inputs = (PortSpec.input("u"),)
-    outputs = (PortSpec.output("y"),)
+    """Continuous plant: output is the stored continuous state."""
+
+    inputs = (PortSpec.input("u", spec=FLOAT_SCALAR),)
+    outputs = (PortSpec.output("y", spec=FLOAT_SCALAR),)
 
     def __init__(self, initial: float = 0.0) -> None:
         super().__init__(direct_feedthrough=False)
@@ -58,28 +83,48 @@ class FirstOrderPlant(ContinuousBlock):
         return -state + inputs["u"]
 
 
-class ErrorBlock(Block):
-    inputs = (PortSpec.input("setpoint"), PortSpec.input("measurement"))
-    outputs = (PortSpec.output("error"),)
-
-    def __init__(self) -> None:
-        super().__init__(direct_feedthrough=True)
-
-    def output(self, ctx, inputs):
-        return inputs["setpoint"] - inputs["measurement"]
-
-
-if __name__ == "__main__":
+def build_system(
+    *,
+    reference: float = 1.0,
+    controller_gain: float = 2.0,
+    controller_sample_time: float = 0.1,
+    plant_initial: float = 0.0,
+) -> System:
     system = System("closed_loop")
-    system.add_block("reference", Setpoint(1.0))
+    system.add_block("reference", Setpoint(reference))
     system.add_block("error", ErrorBlock())
-    system.add_block("controller", ProportionalController(gain=2.0, sample_time=0.1))
-    system.add_block("plant", FirstOrderPlant(initial=0.0))
+    system.add_block(
+        "controller",
+        ProportionalController(
+            gain=controller_gain,
+            sample_time=controller_sample_time,
+        ),
+    )
+    system.add_block("plant", FirstOrderPlant(initial=plant_initial))
 
     system.connect("reference.value", "error.setpoint")
     system.connect("plant.y", "error.measurement")
     system.connect("error.error", "controller.error")
     system.connect("controller.command", "plant.u")
+    return system
 
-    result = Simulator().run(system, SimulationConfig(start=0.0, stop=1.0, dt=0.1))
+
+def main() -> None:
+    system = build_system()
+    config = SimulationConfig(start=0.0, stop=1.0, dt=0.1)
+    simulator = Simulator()
+    report = simulator.validate(system, config)
+
+    if not report.is_valid:
+        for diagnostic in report.diagnostics:
+            print(f"{diagnostic.code}: {diagnostic.message}")
+            print(f"  fix: {diagnostic.suggestion}")
+        return
+
+    result = simulator.run(system, config)
+    print("execution order =", report.summary()["execution_order"])
     print("final y =", result.final_continuous_states["plant"])
+
+
+if __name__ == "__main__":
+    main()

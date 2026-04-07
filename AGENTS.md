@@ -12,8 +12,10 @@ It provides:
 
 - block base classes
 - port declarations
+- signal dtype/shape declarations with `SignalSpec`
 - graph construction
 - connection validation
+- signal compatibility validation
 - execution ordering
 - fixed-step simulation
 - continuous-state integration through SciPy
@@ -39,13 +41,16 @@ Import from the public package namespace:
 from pylink import (
     Block,
     ContinuousBlock,
+    Diagnostic,
     DiscreteBlock,
     PortSpec,
+    SignalSpec,
     SimulationConfig,
     SimulationObserver,
     Simulator,
     StepSnapshot,
     System,
+    ValidationReport,
 )
 ```
 
@@ -101,13 +106,16 @@ Examples:
 Each block declares ports as class attributes using `PortSpec`.
 
 ```python
+FLOAT_SCALAR = SignalSpec(dtype="float", shape=())
+
+
 class MyBlock(Block):
     inputs = (
-        PortSpec.input("u"),
-        PortSpec.input("bias", required=False),
+        PortSpec.input("u", spec=FLOAT_SCALAR),
+        PortSpec.input("bias", required=False, spec=FLOAT_SCALAR),
     )
     outputs = (
-        PortSpec.output("y"),
+        PortSpec.output("y", spec=FLOAT_SCALAR),
     )
 ```
 
@@ -115,6 +123,13 @@ Rules:
 
 - port names must be non-empty
 - port names must not contain `.`
+- use `SignalSpec` when the port has a known dtype and shape
+- prefer `spec=SignalSpec(...)` over the older `data_type=` convenience form
+- `SignalSpec.dtype` may be `bool`, `int`, `float`, `complex`, `object`, or `None`
+- `SignalSpec.shape` may be `()`, `(n,)`, `(m, n)`, or `None`
+- when both ends declare `dtype` or `shape`, they must match exactly
+- unspecified `dtype` or `shape` acts as a wildcard
+- do not assume implicit casts, scalar-to-vector broadcasting, or shape promotion
 - one input port can only have one upstream connection
 - one output port can fan out to many downstream inputs
 - if an input is required, it must be connected before simulation
@@ -327,6 +342,7 @@ Rules:
 - `stop` must be greater than or equal to `start`
 - `(stop - start)` must be an integer multiple of `dt`
 - for each `DiscreteBlock`, `sample_time / dt` must be an integer
+- if a discrete controller is used in an example, choose `sample_time` so it divides the chosen `dt` cleanly
 
 ## Runtime semantics
 
@@ -347,6 +363,7 @@ Important consequences:
 - a discrete block output typically reflects the stored state, not the just-read
   input
 - continuous blocks are integrated by SciPy within each fixed step
+- output and input `SignalSpec` values are checked once at `t=start` as a runtime safeguard
 - because the solver may evaluate intermediate candidate times, `output()` and
   `derivative()` for continuous blocks should be side-effect free
 
@@ -391,6 +408,35 @@ The result object contains:
 
 Use it for end-state assertions and lightweight result inspection.
 
+## `ValidationReport`
+
+Call `Simulator.validate(system, config)` before `run(...)` when you want a
+structured, non-executing validation pass.
+
+The report contains:
+
+- `is_valid`
+- `diagnostics`
+- a deterministic model summary with blocks, ports, connections, execution
+  order, stateful blocks, time-grid constraints, and structured `signal_spec`
+  summaries
+
+Each `Diagnostic` includes:
+
+- a stable `code`
+- a human-readable `message`
+- a short `suggestion`
+- location fields such as block, port, endpoint, connection, and time when
+  available
+
+Common validation codes now include:
+
+- graph issues such as missing ports, duplicate input connections, and algebraic loops
+- time-grid issues such as incompatible discrete sample times
+- `SignalSpec` issues such as `INCOMPATIBLE_PORT_TYPE`,
+  `INCOMPATIBLE_PORT_SHAPE`, `OUTPUT_TYPE_MISMATCH`, and
+  `INPUT_SHAPE_MISMATCH`
+
 ## Recommended coding pattern for agents
 
 When asked to model a system with `pylink`, follow this order:
@@ -398,21 +444,25 @@ When asked to model a system with `pylink`, follow this order:
 1. identify signals
 2. identify stateful quantities
 3. map each component to `Block`, `DiscreteBlock`, or `ContinuousBlock`
-4. declare ports explicitly
+4. declare ports explicitly, including `SignalSpec` when known
 5. decide `direct_feedthrough` correctly
 6. build the `System`
 7. connect using exact `"<block>.<port>"` strings
-8. run with `SimulationConfig`
-9. optionally add an observer for inspection
+8. validate with `Simulator.validate(system, config)` and inspect diagnostics first
+9. run with `SimulationConfig`
+10. optionally add an observer for inspection
 
 ## Minimal templates
 
 ### Stateless transform
 
 ```python
+FLOAT_SCALAR = SignalSpec(dtype="float", shape=())
+
+
 class Gain(Block):
-    inputs = (PortSpec.input("u"),)
-    outputs = (PortSpec.output("y"),)
+    inputs = (PortSpec.input("u", spec=FLOAT_SCALAR),)
+    outputs = (PortSpec.output("y", spec=FLOAT_SCALAR),)
 
     def __init__(self, gain: float) -> None:
         super().__init__(direct_feedthrough=True)
@@ -425,9 +475,12 @@ class Gain(Block):
 ### Discrete-state block
 
 ```python
+FLOAT_SCALAR = SignalSpec(dtype="float", shape=())
+
+
 class Accumulator(DiscreteBlock):
-    inputs = (PortSpec.input("u"),)
-    outputs = (PortSpec.output("x"),)
+    inputs = (PortSpec.input("u", spec=FLOAT_SCALAR),)
+    outputs = (PortSpec.output("x", spec=FLOAT_SCALAR),)
 
     def __init__(self, sample_time: float) -> None:
         super().__init__(sample_time=sample_time, direct_feedthrough=False)
@@ -445,9 +498,12 @@ class Accumulator(DiscreteBlock):
 ### Continuous-state block
 
 ```python
+FLOAT_SCALAR = SignalSpec(dtype="float", shape=())
+
+
 class FirstOrderLag(ContinuousBlock):
-    inputs = (PortSpec.input("u"),)
-    outputs = (PortSpec.output("x"),)
+    inputs = (PortSpec.input("u", spec=FLOAT_SCALAR),)
+    outputs = (PortSpec.output("x", spec=FLOAT_SCALAR),)
 
     def __init__(self, initial: float, tau: float) -> None:
         super().__init__(direct_feedthrough=False)
@@ -485,6 +541,7 @@ When generating example code for users:
 
 - keep the domain logic inside clearly named custom blocks
 - add short comments explaining why a block is stateless, discrete, or continuous
+- prefer declaring `SignalSpec` on every externally meaningful signal
 - keep one `build_system()` function when the example is non-trivial
 - keep one `main()` entry point for runnable examples
 - print a few interpretable outputs instead of dumping raw objects
@@ -495,6 +552,9 @@ See these examples before inventing new patterns:
 
 - `examples/closed_loop.py`
 - `examples/water_cooling.py`
+- `examples/vehicle_path_tracking.py`
+- `examples/cruise_control.py`
+- `examples/mass_spring_damper.py`
 
 These show the intended style for:
 
@@ -502,4 +562,5 @@ These show the intended style for:
 - custom block authoring
 - stateful feedback modeling
 - continuous-time modeling
-
+- vector-valued signals and multi-output plants
+- actuator saturation and disturbance rejection

@@ -5,8 +5,10 @@ from typing import Any, Mapping, Protocol
 
 import numpy as np
 
-from .compiler import ExecutionPlan, compile_system
-from .core import Block, ContinuousBlock, DiscreteBlock, ExecutionContext
+from ._model import build_model_summary
+from .compiler import ExecutionPlan, _analyze_system, _build_execution_plan, compile_system
+from .core import Block, ContinuousBlock, DiscreteBlock, ExecutionContext, SignalSpec
+from .diagnostics import Diagnostic, ValidationReport
 from .errors import ModelValidationError, SimulationError
 from .solver import FloatVector, SciPySolver, Solver
 
@@ -17,6 +19,41 @@ class _UnresolvedInput:
 
 
 UNRESOLVED_INPUT = _UnresolvedInput()
+
+
+def _signal_dtype_from_numpy_kind(kind: str) -> str:
+    if kind == "b":
+        return "bool"
+    if kind in {"i", "u"}:
+        return "int"
+    if kind == "f":
+        return "float"
+    if kind == "c":
+        return "complex"
+    return "object"
+
+
+def _infer_signal_value_signature(value: Any) -> tuple[str, tuple[int, ...]]:
+    if isinstance(value, bool):
+        return ("bool", ())
+    if isinstance(value, int) and not isinstance(value, bool):
+        return ("int", ())
+    if isinstance(value, float):
+        return ("float", ())
+    if isinstance(value, complex):
+        return ("complex", ())
+
+    array = np.asarray(value)
+    return (
+        _signal_dtype_from_numpy_kind(array.dtype.kind),
+        tuple(int(dimension) for dimension in array.shape),
+    )
+
+
+def _format_signal_shape(shape: tuple[int, ...]) -> str:
+    if shape == ():
+        return "()"
+    return str(shape)
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,7 +117,9 @@ class _ContinuousStateCodec:
             size = int(array.size)
             if size <= 0:
                 raise ModelValidationError(
-                    f"Continuous state for block {block_name!r} must be non-empty."
+                    f"Continuous state for block {block_name!r} must be non-empty.",
+                    code="EMPTY_CONTINUOUS_STATE",
+                    suggestion="Return a non-empty numeric state from initial_continuous_state().",
                 )
             segments.append(_StateSegment(block_name=block_name, shape=array.shape, size=size))
             total_size += size
@@ -95,13 +134,17 @@ class _ContinuousStateCodec:
                 value = states[segment.block_name]
             except KeyError as exc:
                 raise ModelValidationError(
-                    f"Missing continuous state for block {segment.block_name!r}."
+                    f"Missing continuous state for block {segment.block_name!r}.",
+                    code="MISSING_CONTINUOUS_STATE",
+                    suggestion="Initialize every continuous block before packing the solver state vector.",
                 ) from exc
             array = np.asarray(value, dtype=float)
             if array.size != segment.size or array.shape != segment.shape:
                 raise ModelValidationError(
                     f"Continuous state shape mismatch for block {segment.block_name!r}: "
-                    f"expected {segment.shape}, got {array.shape}."
+                    f"expected {segment.shape}, got {array.shape}.",
+                    code="CONTINUOUS_STATE_SHAPE_MISMATCH",
+                    suggestion="Keep the continuous state shape consistent across initial_continuous_state(), derivative(), and solver steps.",
                 )
             vector[cursor : cursor + segment.size] = array.reshape(-1)
             cursor += segment.size
@@ -125,6 +168,48 @@ class Simulator:
     def compile(self, system) -> ExecutionPlan:
         return compile_system(system)
 
+    def validate(
+        self,
+        system,
+        config: SimulationConfig | None = None,
+    ) -> ValidationReport:
+        analysis = _analyze_system(system)
+        diagnostics = list(analysis.diagnostics)
+        summary = build_model_summary(
+            analysis.model,
+            block_order=analysis.block_order,
+            config=config,
+        )
+
+        if analysis.block_order is not None:
+            plan = _build_execution_plan(system, analysis)
+
+            if config is not None:
+                diagnostics.extend(self._collect_time_grid_diagnostics(plan, config))
+
+            discrete_states, discrete_state_diagnostics = self._collect_discrete_state_diagnostics(plan)
+            continuous_states, continuous_state_diagnostics = self._collect_continuous_state_diagnostics(
+                plan
+            )
+            diagnostics.extend(discrete_state_diagnostics)
+            diagnostics.extend(continuous_state_diagnostics)
+
+            if not analysis.diagnostics and not discrete_state_diagnostics and not continuous_state_diagnostics:
+                diagnostics.extend(
+                    self._collect_initial_signal_diagnostics(
+                        plan,
+                        config=config,
+                        discrete_states=discrete_states,
+                        continuous_states=continuous_states,
+                    )
+                )
+
+        return ValidationReport(
+            system_name=analysis.model.name,
+            diagnostics=tuple(diagnostics),
+            _summary_data=summary,
+        )
+
     def run(
         self,
         system,
@@ -146,7 +231,7 @@ class Simulator:
 
         step_count = self._compute_step_count(config)
         current_time = float(config.start)
-        current_outputs = self._evaluate_outputs(
+        current_outputs = self._evaluate_initial_signal_values(
             plan,
             time=current_time,
             step_index=0,
@@ -225,12 +310,26 @@ class Simulator:
         return result
 
     def _validate_time_grid(self, plan: ExecutionPlan, config: SimulationConfig) -> None:
+        diagnostics = self._collect_time_grid_diagnostics(plan, config)
+        if diagnostics:
+            raise ModelValidationError.from_diagnostic(diagnostics[0])
+
+    def _collect_time_grid_diagnostics(
+        self,
+        plan: ExecutionPlan,
+        config: SimulationConfig,
+    ) -> list[Diagnostic]:
+        diagnostics: list[Diagnostic] = []
         total = config.stop - config.start
         step_count = total / config.dt
         rounded = round(step_count)
         if not np.isclose(step_count, rounded, atol=1e-9, rtol=0.0):
-            raise ModelValidationError(
-                "Simulation horizon must be an integer multiple of dt."
+            diagnostics.append(
+                Diagnostic(
+                    code="INVALID_TIME_GRID",
+                    message="Simulation horizon must be an integer multiple of dt.",
+                    suggestion="Choose start, stop, and dt so that (stop - start) / dt is an integer.",
+                )
             )
 
         for block_name in plan.discrete_blocks:
@@ -238,34 +337,145 @@ class Simulator:
             assert isinstance(block, DiscreteBlock)
             ratio = block.sample_time / config.dt
             if not np.isclose(ratio, round(ratio), atol=1e-9, rtol=0.0):
-                raise ModelValidationError(
-                    f"Discrete block {block_name!r} sample_time={block.sample_time} "
-                    f"is incompatible with dt={config.dt}."
+                diagnostics.append(
+                    Diagnostic(
+                        code="INCOMPATIBLE_SAMPLE_TIME",
+                        message=(
+                            f"Discrete block {block_name!r} sample_time={block.sample_time} "
+                            f"is incompatible with dt={config.dt}."
+                        ),
+                        suggestion="Choose a sample_time that is an integer multiple of dt.",
+                        block_name=block_name,
+                    )
                 )
+        return diagnostics
 
     def _compute_step_count(self, config: SimulationConfig) -> int:
         return int(round((config.stop - config.start) / config.dt))
 
-    def _initialize_discrete_states(self, plan: ExecutionPlan) -> dict[str, Any]:
+    def _collect_discrete_state_diagnostics(
+        self,
+        plan: ExecutionPlan,
+    ) -> tuple[dict[str, Any], list[Diagnostic]]:
         states: dict[str, Any] = {}
+        diagnostics: list[Diagnostic] = []
         for block_name in plan.discrete_blocks:
             block = plan.system.blocks[block_name]
             assert isinstance(block, DiscreteBlock)
-            states[block_name] = block.initial_discrete_state()
+            try:
+                states[block_name] = block.initial_discrete_state()
+            except Exception as exc:
+                diagnostics.append(
+                    Diagnostic(
+                        code="DISCRETE_INITIAL_STATE_ERROR",
+                        message=(
+                            f"Discrete block {block_name!r} failed to produce an initial discrete state: {exc!r}."
+                        ),
+                        suggestion="Make initial_discrete_state() return the starting sampled state without raising.",
+                        block_name=block_name,
+                    )
+                )
+        return states, diagnostics
+
+    def _initialize_discrete_states(self, plan: ExecutionPlan) -> dict[str, Any]:
+        states, diagnostics = self._collect_discrete_state_diagnostics(plan)
+        if diagnostics:
+            raise ModelValidationError.from_diagnostic(diagnostics[0])
         return states
 
-    def _initialize_continuous_states(self, plan: ExecutionPlan) -> dict[str, Any]:
+    def _collect_continuous_state_diagnostics(
+        self,
+        plan: ExecutionPlan,
+    ) -> tuple[dict[str, Any], list[Diagnostic]]:
         states: dict[str, Any] = {}
+        diagnostics: list[Diagnostic] = []
         for block_name in plan.continuous_blocks:
             block = plan.system.blocks[block_name]
             assert isinstance(block, ContinuousBlock)
-            initial_state = block.initial_continuous_state()
-            if initial_state is None:
-                raise ModelValidationError(
-                    f"Continuous block {block_name!r} must provide an initial state."
+            try:
+                initial_state = block.initial_continuous_state()
+            except Exception as exc:
+                diagnostics.append(
+                    Diagnostic(
+                        code="CONTINUOUS_INITIAL_STATE_ERROR",
+                        message=(
+                            f"Continuous block {block_name!r} failed to produce an initial continuous state: {exc!r}."
+                        ),
+                        suggestion="Make initial_continuous_state() return a numeric SciPy-compatible state without raising.",
+                        block_name=block_name,
+                    )
                 )
+                continue
+
+            if initial_state is None:
+                diagnostics.append(
+                    Diagnostic(
+                        code="MISSING_CONTINUOUS_INITIAL_STATE",
+                        message=f"Continuous block {block_name!r} must provide an initial state.",
+                        suggestion="Return a numeric initial state from initial_continuous_state().",
+                        block_name=block_name,
+                    )
+                )
+                continue
+
             states[block_name] = initial_state
+        return states, diagnostics
+
+    def _initialize_continuous_states(self, plan: ExecutionPlan) -> dict[str, Any]:
+        states, diagnostics = self._collect_continuous_state_diagnostics(plan)
+        if diagnostics:
+            raise ModelValidationError.from_diagnostic(diagnostics[0])
         return states
+
+    def _collect_initial_signal_diagnostics(
+        self,
+        plan: ExecutionPlan,
+        *,
+        config: SimulationConfig | None,
+        discrete_states: Mapping[str, Any],
+        continuous_states: Mapping[str, Any],
+    ) -> list[Diagnostic]:
+        time = config.start if config is not None else 0.0
+        dt = config.dt if config is not None else 1.0
+        try:
+            self._evaluate_initial_signal_values(
+                plan,
+                time=time,
+                step_index=0,
+                dt=dt,
+                discrete_states=discrete_states,
+                continuous_states=continuous_states,
+            )
+        except SimulationError as error:
+            return [self._diagnostic_from_simulation_error(error)]
+        return []
+
+    def _evaluate_initial_signal_values(
+        self,
+        plan: ExecutionPlan,
+        *,
+        time: float,
+        step_index: int,
+        dt: float,
+        discrete_states: Mapping[str, Any],
+        continuous_states: Mapping[str, Any],
+    ) -> dict[str, dict[str, Any]]:
+        outputs = self._evaluate_outputs(
+            plan,
+            time=time,
+            step_index=step_index,
+            dt=dt,
+            discrete_states=discrete_states,
+            continuous_states=continuous_states,
+            validate_signal_values=True,
+        )
+        full_inputs = self._resolve_all_inputs(plan, outputs, allow_unresolved=False)
+        self._validate_input_signal_values(
+            plan,
+            time=time,
+            full_inputs=full_inputs,
+        )
+        return outputs
 
     def _evaluate_outputs(
         self,
@@ -276,6 +486,7 @@ class Simulator:
         dt: float,
         discrete_states: Mapping[str, Any],
         continuous_states: Mapping[str, Any],
+        validate_signal_values: bool = False,
     ) -> dict[str, dict[str, Any]]:
         outputs: dict[str, dict[str, Any]] = {}
         for block_name in plan.block_order:
@@ -305,6 +516,8 @@ class Simulator:
                     block_name=block_name,
                     time=time,
                     cause=exc,
+                    code="BLOCK_OUTPUT_EXCEPTION",
+                    suggestion="Update output() so it only uses declared inputs, state, and parameters.",
                 ) from exc
             outputs[block_name] = self._normalize_outputs(
                 block=block,
@@ -312,7 +525,117 @@ class Simulator:
                 time=time,
                 raw_output=raw_output,
             )
+            if validate_signal_values:
+                self._validate_output_signal_values(
+                    block=block,
+                    block_name=block_name,
+                    time=time,
+                    outputs=outputs[block_name],
+                )
         return outputs
+
+    def _validate_output_signal_values(
+        self,
+        *,
+        block: Block,
+        block_name: str,
+        time: float,
+        outputs: Mapping[str, Any],
+    ) -> None:
+        for spec in block.output_ports:
+            if not spec.signal_spec.is_specified:
+                continue
+            self._validate_signal_value(
+                signal_spec=spec.signal_spec,
+                value=outputs[spec.name],
+                block_name=block_name,
+                port_name=spec.name,
+                time=time,
+                code_for_dtype="OUTPUT_TYPE_MISMATCH",
+                code_for_shape="OUTPUT_SHAPE_MISMATCH",
+                message_prefix="Output",
+                suggestion=(
+                    "Return values that match the declared output SignalSpec or update the output port declaration."
+                ),
+            )
+
+    def _validate_input_signal_values(
+        self,
+        plan: ExecutionPlan,
+        *,
+        time: float,
+        full_inputs: Mapping[str, Mapping[str, Any]],
+    ) -> None:
+        for block_name, block in plan.system.blocks.items():
+            bindings = plan.input_bindings[block_name]
+            for spec in block.input_ports:
+                if not spec.signal_spec.is_specified:
+                    continue
+                endpoint = bindings.get(spec.name)
+                if endpoint is None:
+                    continue
+                self._validate_signal_value(
+                    signal_spec=spec.signal_spec,
+                    value=full_inputs[block_name][spec.name],
+                    block_name=block_name,
+                    port_name=spec.name,
+                    time=time,
+                    connection=f"{endpoint} -> {block_name}.{spec.name}",
+                    code_for_dtype="INPUT_TYPE_MISMATCH",
+                    code_for_shape="INPUT_SHAPE_MISMATCH",
+                    message_prefix="Input",
+                    suggestion=(
+                        "Update the connected source value or the input SignalSpec so the runtime signal matches the declared dtype and shape."
+                    ),
+                )
+
+    def _validate_signal_value(
+        self,
+        *,
+        signal_spec: SignalSpec,
+        value: Any,
+        block_name: str,
+        port_name: str,
+        time: float,
+        code_for_dtype: str,
+        code_for_shape: str,
+        message_prefix: str,
+        suggestion: str,
+        connection: str | None = None,
+    ) -> None:
+        if not signal_spec.is_specified:
+            return
+
+        actual_dtype, actual_shape = _infer_signal_value_signature(value)
+        endpoint = f"{block_name}.{port_name}"
+
+        if signal_spec.dtype is not None and actual_dtype != signal_spec.dtype:
+            raise SimulationError(
+                (
+                    f"{message_prefix} {endpoint} resolved dtype {actual_dtype!r} "
+                    f"but declared dtype is {signal_spec.dtype!r}."
+                ),
+                block_name=block_name,
+                port_name=port_name,
+                connection=connection,
+                time=time,
+                code=code_for_dtype,
+                suggestion=suggestion,
+            )
+
+        if signal_spec.shape is not None and actual_shape != signal_spec.shape:
+            raise SimulationError(
+                (
+                    f"{message_prefix} {endpoint} resolved shape {_format_signal_shape(actual_shape)} "
+                    f"but declared shape is {_format_signal_shape(signal_spec.shape)}."
+                ),
+                block_name=block_name,
+                port_name=port_name,
+                connection=connection,
+                time=time,
+                code=code_for_shape,
+                suggestion=suggestion,
+            )
 
     def _resolve_inputs_for_output(
         self,
@@ -340,6 +663,8 @@ class Simulator:
                     block_name=block_name,
                     port_name=spec.name,
                     connection=f"{endpoint} -> {block_name}.{spec.name}",
+                    code="UNRESOLVED_CURRENT_INPUT",
+                    suggestion="Ensure the execution order is valid and that feedback paths pass through stateful blocks.",
                 )
             values[spec.name] = source_outputs[endpoint.port_name]
         return values
@@ -371,6 +696,8 @@ class Simulator:
                         block_name=block_name,
                         port_name=spec.name,
                         connection=f"{endpoint} -> {block_name}.{spec.name}",
+                        code="UNRESOLVED_CONNECTED_INPUT",
+                        suggestion="Check the connected source port and make sure the model can be evaluated without an algebraic loop.",
                     )
                 values[spec.name] = source_outputs[endpoint.port_name]
             resolved[block_name] = values
@@ -392,6 +719,8 @@ class Simulator:
                 "Blocks without declared outputs must return None or {}.",
                 block_name=block_name,
                 time=time,
+                code="INVALID_EMPTY_OUTPUT_RETURN",
+                suggestion="Return None or {} from blocks that declare no outputs.",
             )
 
         if len(output_specs) == 1 and not isinstance(raw_output, Mapping):
@@ -402,6 +731,8 @@ class Simulator:
                 "Blocks with multiple outputs must return a mapping.",
                 block_name=block_name,
                 time=time,
+                code="INVALID_MULTI_OUTPUT_RETURN",
+                suggestion="Return a mapping that includes every declared output name.",
             )
 
         normalized: dict[str, Any] = {}
@@ -413,12 +744,16 @@ class Simulator:
                 f"Block is missing declared outputs: {missing}.",
                 block_name=block_name,
                 time=time,
+                code="MISSING_DECLARED_OUTPUTS",
+                suggestion="Return every declared output port from output().",
             )
         if extra:
             raise SimulationError(
                 f"Block returned undeclared outputs: {extra}.",
                 block_name=block_name,
                 time=time,
+                code="UNDECLARED_OUTPUTS",
+                suggestion="Only return output names that were declared on the block.",
             )
         for spec in output_specs:
             normalized[spec.name] = raw_output[spec.name]
@@ -480,6 +815,8 @@ class Simulator:
                         block_name=block_name,
                         time=candidate_time,
                         cause=exc,
+                        code="CONTINUOUS_DERIVATIVE_EXCEPTION",
+                        suggestion="Make derivative() pure, side-effect free, and compatible with the continuous state shape.",
                     ) from exc
             return codec.pack(derivatives)
 
@@ -500,6 +837,8 @@ class Simulator:
                 "Continuous solver step failed.",
                 time=time,
                 cause=exc,
+                code="CONTINUOUS_SOLVER_FAILURE",
+                suggestion="Check the derivative implementation and choose a solver configuration that matches the model dynamics.",
             ) from exc
         return codec.unpack(next_vector)
 
@@ -547,6 +886,8 @@ class Simulator:
                     block_name=block_name,
                     time=time,
                     cause=exc,
+                    code="DISCRETE_UPDATE_EXCEPTION",
+                    suggestion="Make update_state() return the next sampled state without mutating shared runtime state.",
                 ) from exc
         return next_states
 
@@ -576,6 +917,17 @@ class Simulator:
         outputs: Mapping[str, Mapping[str, Any]],
     ) -> dict[str, dict[str, Any]]:
         return {block_name: dict(values) for block_name, values in outputs.items()}
+
+    def _diagnostic_from_simulation_error(self, error: SimulationError) -> Diagnostic:
+        return Diagnostic(
+            code=error.code or "SIMULATION_ERROR",
+            message=getattr(error, "base_message", error.message),
+            suggestion=error.suggestion or "Inspect the failing block callback and the connected signals.",
+            block_name=error.block_name,
+            port_name=error.port_name,
+            connection=error.connection,
+            time=error.time,
+        )
 
     def _notify(self, observer: SimulationObserver | None, method_name: str, *args: Any) -> None:
         if observer is None:
