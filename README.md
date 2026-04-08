@@ -8,6 +8,32 @@ The design goal is AI-native authoring. A Codex or Claude Code workflow should b
 able to generate a readable model, validate it, and iterate on it without needing
 an extra graphical tool or a large built-in block catalog.
 
+## Installation
+
+Install the released package from PyPI:
+
+```bash
+pip install mavrith
+```
+
+Install optional YAML export support:
+
+```bash
+pip install "mavrith[yaml]"
+```
+
+For local development from GitHub:
+
+```bash
+git clone https://github.com/Yuzhe-Xu/Mavrith.git
+cd Mavrith
+uv sync --extra dev --extra yaml
+```
+
+The `examples/` directory is kept in the repository as runnable documentation.
+It is included in the source distribution for review and testing, but it is not
+installed as part of the runtime wheel.
+
 ## What It Does
 
 - Pure Python DSL for building systems with blocks and connections

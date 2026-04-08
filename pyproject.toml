@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,17 +8,38 @@ version = "0.1.0"
 description = "A lightweight block-based simulation framework for Python."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
-  { name = "OpenAI Codex" },
+  { name = "Max Xu" },
+]
+keywords = ["simulation", "control", "block-diagram", "dynamical-systems"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering",
+  "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
   "scipy>=1.13",
 ]
 
+[project.urls]
+Homepage = "https://github.com/Yuzhe-Xu/Mavrith"
+Repository = "https://github.com/Yuzhe-Xu/Mavrith"
+Issues = "https://github.com/Yuzhe-Xu/Mavrith/issues"
+
 [project.optional-dependencies]
 dev = [
   "pytest>=7.4",
+  "build>=1.2",
+  "twine>=5.0",
 ]
 yaml = [
   "PyYAML>=6",
