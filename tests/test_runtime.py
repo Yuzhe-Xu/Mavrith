@@ -110,8 +110,8 @@ def test_discrete_block_updates_on_sample_hits():
     result = Simulator().run(system, SimulationConfig(start=0.0, stop=0.4, dt=0.1))
 
     assert result.time_points == pytest.approx((0.0, 0.1, 0.2, 0.3, 0.4))
-    assert result.final_discrete_states["counter"] == 2
-    assert result.final_outputs["counter"]["count"] == 2
+    assert result.final_discrete_states["counter"] == 3
+    assert result.final_outputs["counter"]["count"] == 3
 
 
 def test_continuous_block_is_integrated_with_scipy():
@@ -133,8 +133,8 @@ def test_mixed_system_runs_with_discrete_and_continuous_blocks():
 
     result = Simulator().run(system, SimulationConfig(start=0.0, stop=0.2, dt=0.1))
 
-    assert result.final_discrete_states["counter"] == 2
-    assert result.final_continuous_states["plant"] == pytest.approx(0.1, rel=1e-3)
+    assert result.final_discrete_states["counter"] == 3
+    assert result.final_continuous_states["plant"] == pytest.approx(0.3, rel=1e-3)
 
 
 def test_incompatible_sample_time_is_rejected():

@@ -13,6 +13,7 @@ an extra graphical tool or a large built-in block catalog.
 - Pure Python DSL for building systems with blocks and connections
 - Hierarchical `Subsystem` composition with compile-time flattening
 - Stateless, discrete-state, and continuous-state block base classes
+- Multi-rate discrete execution with `sample_time`, `offset`, and `priority`
 - Port dtype/shape declarations with `SignalSpec`
 - Connection validation and direct-feedthrough algebraic loop detection
 - Static and initial-runtime signal compatibility checks
@@ -82,6 +83,50 @@ The key modeling decision is `direct_feedthrough`:
 
 Feedback through stateful blocks is valid. Feedback through only direct-feedthrough
 blocks is rejected as an algebraic loop.
+
+## Discrete Rates, Offset, And Priority
+
+`DiscreteBlock` now models a periodic sampled task with three timing fields:
+
+- `sample_time`: the task period
+- `offset`: an absolute time offset, interpreted as `t = n * sample_time + offset`
+- `priority`: optional explicit task priority, where lower integers run first
+
+Example:
+
+```python
+class SampledController(DiscreteBlock):
+    inputs = (PortSpec.input("u", spec=FLOAT_SCALAR),)
+    outputs = (PortSpec.output("y", spec=FLOAT_SCALAR),)
+
+    def __init__(self) -> None:
+        super().__init__(
+            sample_time=0.1,
+            offset=0.02,
+            priority=1,
+            direct_feedthrough=False,
+        )
+
+    def initial_discrete_state(self):
+        return 0.0
+
+    def output(self, ctx, inputs):
+        return ctx.discrete_state
+
+    def update_state(self, ctx, inputs, state):
+        return inputs["u"]
+```
+
+When two discrete tasks hit at the same simulation time:
+
+- lower `priority` runs first
+- each committed task group becomes visible immediately
+- downstream direct-feedthrough logic is re-evaluated before lower-priority tasks run
+
+Cross-rate connections are allowed by default. `validate()` and `summary()` expose
+them explicitly as `slow-to-fast`, `fast-to-slow`, or
+`same-period-different-offset` so users and AI tools can inspect the implied
+hold semantics.
 
 ## Quick Example
 
@@ -192,7 +237,8 @@ starting the simulation. The report includes:
 - Precise block / port / connection context
 - Short repair suggestions
 - A deterministic model summary with blocks, ports, connections, execution order,
-  stateful blocks, time-grid constraints, and structured `signal_spec` metadata
+  stateful blocks, time-grid constraints, resolved rate groups, cross-rate
+  connections, and structured `signal_spec` metadata
 
 Validation currently happens in two stages:
 
@@ -232,13 +278,16 @@ The repository examples follow the same style on purpose:
   - decentralized multivariable level control for the quadruple-tank benchmark
 - `examples/large_hierarchical_benchmark.py`
   - generated deep subsystem hierarchy for compile and runtime scaling checks
+- `examples/multirate_offset_priority.py`
+  - sampled tasks with explicit `offset` and `priority`
+  - useful for understanding same-time execution order and cross-rate summaries
 
 Common modifications to these examples:
 
 - Insert a noise source between plant output and measurement input
 - Replace the controller block with a different sampled controller
 - Add an observer that records selected signals
-- Change `sample_time` and `dt` together, then re-run validation
+- Change `sample_time`, `offset`, and `dt` together, then re-run validation
 
 ## Notes
 
@@ -249,3 +298,5 @@ Common modifications to these examples:
 - Port signal checks run statically when declarations are available and once at `t=start` as a runtime safeguard.
 - `(stop - start)` must be an integer multiple of `dt`.
 - Each `DiscreteBlock.sample_time` must be an integer multiple of `dt`.
+- Each `DiscreteBlock.offset` must align with the simulation `dt` grid.
+- Lower discrete `priority` values run first when multiple rate groups hit at the same time.

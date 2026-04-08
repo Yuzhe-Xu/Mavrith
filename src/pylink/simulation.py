@@ -7,7 +7,14 @@ import numpy as np
 
 from ._hierarchy import flatten_system
 from ._model import build_model_summary
-from .compiler import ExecutionPlan, _analyze_system, _build_execution_plan, compile_system
+from .compiler import (
+    ExecutionPlan,
+    ResolvedRateGroup,
+    _analyze_system,
+    _build_execution_plan,
+    _error_diagnostics,
+    compile_system,
+)
 from .core import Block, ContinuousBlock, DiscreteBlock, ExecutionContext, SignalSpec
 from .diagnostics import Diagnostic, ValidationReport
 from .errors import ModelValidationError, SimulationError
@@ -185,6 +192,9 @@ class Simulator:
                 block_order=None,
                 config=config,
                 hierarchy=flatten_result.hierarchy_summary,
+                rate_groups=[],
+                cross_rate_connections=[],
+                execution_notes={},
             )
         else:
             analysis = _analyze_system(flatten_result.flat_system)
@@ -194,9 +204,15 @@ class Simulator:
                 block_order=analysis.block_order,
                 config=config,
                 hierarchy=flatten_result.hierarchy_summary,
+                rate_groups=[group.summary() for group in analysis.rate_groups],
+                cross_rate_connections=[item.summary() for item in analysis.cross_rate_connections],
+                execution_notes=dict(analysis.execution_notes),
             )
 
-            if analysis.block_order is not None:
+            flatten_errors = _error_diagnostics(flatten_result.diagnostics)
+            analysis_errors = _error_diagnostics(analysis.diagnostics)
+
+            if analysis.block_order is not None and not analysis_errors:
                 plan = _build_execution_plan(
                     flatten_result.flat_system,
                     analysis,
@@ -214,8 +230,8 @@ class Simulator:
                 diagnostics.extend(continuous_state_diagnostics)
 
                 if (
-                    not flatten_result.diagnostics
-                    and not analysis.diagnostics
+                    not flatten_errors
+                    and not analysis_errors
                     and not discrete_state_diagnostics
                     and not continuous_state_diagnostics
                 ):
@@ -227,6 +243,8 @@ class Simulator:
                             continuous_states=continuous_states,
                         )
                     )
+
+        diagnostics.sort(key=lambda diagnostic: (not diagnostic.is_error,))
 
         return ValidationReport(
             system_name=system.name,
@@ -254,33 +272,34 @@ class Simulator:
         self._notify(observer, "on_simulation_start", plan, config)
 
         step_count = self._compute_step_count(config)
-        current_time = float(config.start)
-        current_outputs = self._evaluate_initial_signal_values(
-            plan,
-            time=current_time,
-            step_index=0,
-            dt=config.dt,
-            discrete_states=discrete_states,
-            continuous_states=continuous_states,
-        )
-
         snapshots: list[StepSnapshot] = []
-        snapshots.append(
-            self._make_snapshot(
-                time=current_time,
-                step_index=0,
-                outputs=current_outputs,
-                discrete_states=discrete_states,
-                continuous_states=continuous_states,
-            )
-        )
-        self._notify(observer, "on_step", snapshots[-1])
+        current_time = float(config.start)
 
         try:
-            for step_index in range(step_count):
-                full_inputs = self._resolve_all_inputs(plan, current_outputs, allow_unresolved=False)
+            for step_index in range(step_count + 1):
+                discrete_states, current_outputs, _ = self._evaluate_visible_outputs_at_time(
+                    plan=plan,
+                    time=current_time,
+                    step_index=step_index,
+                    dt=config.dt,
+                    discrete_states=discrete_states,
+                    continuous_states=continuous_states,
+                    validate_signal_values=step_index == 0,
+                )
+                snapshots.append(
+                    self._make_snapshot(
+                        time=current_time,
+                        step_index=step_index,
+                        outputs=current_outputs,
+                        discrete_states=discrete_states,
+                        continuous_states=continuous_states,
+                    )
+                )
+                self._notify(observer, "on_step", snapshots[-1])
+                if step_index == step_count:
+                    continue
 
-                next_continuous_states = self._advance_continuous_states(
+                continuous_states = self._advance_continuous_states(
                     plan=plan,
                     config=config,
                     step_index=step_index,
@@ -289,37 +308,7 @@ class Simulator:
                     continuous_states=continuous_states,
                     codec=codec,
                 )
-                next_discrete_states = self._advance_discrete_states(
-                    plan=plan,
-                    config=config,
-                    step_index=step_index,
-                    time=current_time,
-                    discrete_states=discrete_states,
-                    full_inputs=full_inputs,
-                    continuous_states=continuous_states,
-                )
-
                 current_time = round(config.start + (step_index + 1) * config.dt, 12)
-                continuous_states = next_continuous_states
-                discrete_states = next_discrete_states
-                current_outputs = self._evaluate_outputs(
-                    plan,
-                    time=current_time,
-                    step_index=step_index + 1,
-                    dt=config.dt,
-                    discrete_states=discrete_states,
-                    continuous_states=continuous_states,
-                )
-                snapshots.append(
-                    self._make_snapshot(
-                        time=current_time,
-                        step_index=step_index + 1,
-                        outputs=current_outputs,
-                        discrete_states=discrete_states,
-                        continuous_states=continuous_states,
-                    )
-                )
-                self._notify(observer, "on_step", snapshots[-1])
         except SimulationError as error:
             self._notify(observer, "on_simulation_error", error)
             raise
@@ -369,6 +358,32 @@ class Simulator:
                             f"is incompatible with dt={config.dt}."
                         ),
                         suggestion="Choose a sample_time that is an integer multiple of dt.",
+                        block_name=block_name,
+                    )
+                )
+            offset_ratio = block.offset / config.dt
+            if not np.isclose(offset_ratio, round(offset_ratio), atol=1e-9, rtol=0.0):
+                diagnostics.append(
+                    Diagnostic(
+                        code="INCOMPATIBLE_SAMPLE_OFFSET",
+                        message=(
+                            f"Discrete block {block_name!r} offset={block.offset} "
+                            f"is incompatible with dt={config.dt}."
+                        ),
+                        suggestion="Choose an offset that is an integer multiple of dt.",
+                        block_name=block_name,
+                    )
+                )
+            start_alignment = (config.start - block.offset) / config.dt
+            if not np.isclose(start_alignment, round(start_alignment), atol=1e-9, rtol=0.0):
+                diagnostics.append(
+                    Diagnostic(
+                        code="INCOMPATIBLE_SAMPLE_OFFSET",
+                        message=(
+                            f"Discrete block {block_name!r} offset={block.offset} does not align "
+                            f"with start={config.start} on the dt={config.dt} simulation grid."
+                        ),
+                        suggestion="Choose start, dt, and offset so sample hits land on simulation time points.",
                         block_name=block_name,
                     )
                 )
@@ -462,19 +477,20 @@ class Simulator:
         time = config.start if config is not None else 0.0
         dt = config.dt if config is not None else 1.0
         try:
-            self._evaluate_initial_signal_values(
-                plan,
+            self._evaluate_visible_outputs_at_time(
+                plan=plan,
                 time=time,
                 step_index=0,
                 dt=dt,
                 discrete_states=discrete_states,
                 continuous_states=continuous_states,
+                validate_signal_values=True,
             )
         except SimulationError as error:
             return [self._diagnostic_from_simulation_error(error)]
         return []
 
-    def _evaluate_initial_signal_values(
+    def _evaluate_visible_outputs_at_time(
         self,
         plan: ExecutionPlan,
         *,
@@ -483,23 +499,47 @@ class Simulator:
         dt: float,
         discrete_states: Mapping[str, Any],
         continuous_states: Mapping[str, Any],
-    ) -> dict[str, dict[str, Any]]:
-        outputs = self._evaluate_outputs(
+        validate_signal_values: bool = False,
+    ) -> tuple[dict[str, Any], dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+        visible_discrete_states = dict(discrete_states)
+        current_outputs = self._evaluate_outputs(
             plan,
             time=time,
             step_index=step_index,
             dt=dt,
-            discrete_states=discrete_states,
+            discrete_states=visible_discrete_states,
             continuous_states=continuous_states,
-            validate_signal_values=True,
+            validate_signal_values=False,
         )
-        full_inputs = self._resolve_all_inputs(plan, outputs, allow_unresolved=False)
-        self._validate_input_signal_values(
-            plan,
-            time=time,
-            full_inputs=full_inputs,
-        )
-        return outputs
+        for group in self._build_hit_schedule_at_time(plan=plan, time=time):
+            visible_discrete_states, current_outputs = self._apply_discrete_task_group(
+                plan=plan,
+                group=group,
+                time=time,
+                step_index=step_index,
+                dt=dt,
+                discrete_states=visible_discrete_states,
+                continuous_states=continuous_states,
+                current_outputs=current_outputs,
+            )
+        if validate_signal_values:
+            current_outputs = self._evaluate_outputs(
+                plan,
+                time=time,
+                step_index=step_index,
+                dt=dt,
+                discrete_states=visible_discrete_states,
+                continuous_states=continuous_states,
+                validate_signal_values=True,
+            )
+        full_inputs = self._resolve_all_inputs(plan, current_outputs, allow_unresolved=False)
+        if validate_signal_values:
+            self._validate_input_signal_values(
+                plan,
+                time=time,
+                full_inputs=full_inputs,
+            )
+        return visible_discrete_states, current_outputs, full_inputs
 
     def _evaluate_outputs(
         self,
@@ -866,38 +906,47 @@ class Simulator:
             ) from exc
         return codec.unpack(next_vector)
 
-    def _advance_discrete_states(
+    def _build_hit_schedule_at_time(
         self,
         *,
         plan: ExecutionPlan,
-        config: SimulationConfig,
-        step_index: int,
         time: float,
+    ) -> tuple[ResolvedRateGroup, ...]:
+        return tuple(
+            group
+            for group in plan.rate_groups
+            if self._is_sample_hit(time=time, sample_time=group.sample_time, offset=group.offset)
+        )
+
+    def _apply_discrete_task_group(
+        self,
+        *,
+        plan: ExecutionPlan,
+        group: ResolvedRateGroup,
+        time: float,
+        step_index: int,
+        dt: float,
         discrete_states: Mapping[str, Any],
-        full_inputs: Mapping[str, Mapping[str, Any]],
         continuous_states: Mapping[str, Any],
-    ) -> dict[str, Any]:
+        current_outputs: Mapping[str, Mapping[str, Any]],
+    ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
         next_states = dict(discrete_states)
-        for block_name in plan.discrete_blocks:
+        full_inputs = self._resolve_all_inputs(plan, current_outputs, allow_unresolved=False)
+        pending_updates: dict[str, Any] = {}
+        for block_name in group.block_names:
             block = plan.system.blocks[block_name]
             assert isinstance(block, DiscreteBlock)
-            if not self._is_sample_hit(
-                time=time,
-                start=config.start,
-                sample_time=block.sample_time,
-            ):
-                continue
             ctx = ExecutionContext(
                 block_name=block_name,
                 time=time,
                 step_index=step_index,
-                dt=config.dt,
+                dt=dt,
                 parameters=block.parameters,
                 discrete_state=discrete_states.get(block_name),
                 continuous_state=continuous_states.get(block_name),
             )
             try:
-                next_states[block_name] = block.update_state(
+                pending_updates[block_name] = block.update_state(
                     ctx,
                     full_inputs[block_name],
                     discrete_states.get(block_name),
@@ -913,11 +962,42 @@ class Simulator:
                     code="DISCRETE_UPDATE_EXCEPTION",
                     suggestion="Make update_state() return the next sampled state without mutating shared runtime state.",
                 ) from exc
-        return next_states
+        next_states.update(pending_updates)
+        next_outputs = self._propagate_after_discrete_commit(
+            plan=plan,
+            time=time,
+            step_index=step_index,
+            dt=dt,
+            discrete_states=next_states,
+            continuous_states=continuous_states,
+        )
+        return next_states, next_outputs
 
-    def _is_sample_hit(self, *, time: float, start: float, sample_time: float) -> bool:
-        offset = (time - start) / sample_time
-        return bool(np.isclose(offset, round(offset), atol=1e-9, rtol=0.0))
+    def _propagate_after_discrete_commit(
+        self,
+        *,
+        plan: ExecutionPlan,
+        time: float,
+        step_index: int,
+        dt: float,
+        discrete_states: Mapping[str, Any],
+        continuous_states: Mapping[str, Any],
+    ) -> dict[str, dict[str, Any]]:
+        return self._evaluate_outputs(
+            plan,
+            time=time,
+            step_index=step_index,
+            dt=dt,
+            discrete_states=discrete_states,
+            continuous_states=continuous_states,
+            validate_signal_values=False,
+        )
+
+    def _is_sample_hit(self, *, time: float, sample_time: float, offset: float) -> bool:
+        if time + 1e-9 < offset:
+            return False
+        normalized = (time - offset) / sample_time
+        return bool(np.isclose(normalized, round(normalized), atol=1e-9, rtol=0.0))
 
     def _make_snapshot(
         self,

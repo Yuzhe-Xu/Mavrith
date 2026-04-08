@@ -17,6 +17,14 @@ class Diagnostic:
     connection: str | None = None
     time: float | None = None
 
+    @property
+    def is_error(self) -> bool:
+        return self.severity == "error"
+
+    @property
+    def is_warning(self) -> bool:
+        return self.severity == "warning"
+
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
             "code": self.code,
@@ -50,11 +58,15 @@ class ValidationReport:
 
     @property
     def is_valid(self) -> bool:
-        return not self.diagnostics
+        return all(not diagnostic.is_error for diagnostic in self.diagnostics)
 
     @property
     def error_count(self) -> int:
-        return len(self.diagnostics)
+        return sum(1 for diagnostic in self.diagnostics if diagnostic.is_error)
+
+    @property
+    def warning_count(self) -> int:
+        return sum(1 for diagnostic in self.diagnostics if diagnostic.is_warning)
 
     def summary(self) -> dict[str, Any]:
         return deepcopy(dict(self._summary_data))
@@ -64,6 +76,7 @@ class ValidationReport:
             "system_name": self.system_name,
             "is_valid": self.is_valid,
             "error_count": self.error_count,
+            "warning_count": self.warning_count,
             "diagnostics": [diagnostic.to_dict() for diagnostic in self.diagnostics],
             "summary": self.summary(),
         }

@@ -188,6 +188,8 @@ class DiscreteBlock(Block):
         self,
         *,
         sample_time: float = 1.0,
+        offset: float = 0.0,
+        priority: int | None = None,
         inputs: Sequence[PortSpec] | None = None,
         outputs: Sequence[PortSpec] | None = None,
         direct_feedthrough: bool = False,
@@ -195,6 +197,12 @@ class DiscreteBlock(Block):
     ) -> None:
         if sample_time <= 0:
             raise ValueError("sample_time must be positive.")
+        if offset < 0:
+            raise ValueError("offset must be greater than or equal to zero.")
+        if offset >= sample_time:
+            raise ValueError("offset must be smaller than sample_time.")
+        if priority is not None and (isinstance(priority, bool) or not isinstance(priority, int)):
+            raise TypeError("priority must be an int or None.")
         super().__init__(
             inputs=inputs,
             outputs=outputs,
@@ -202,6 +210,8 @@ class DiscreteBlock(Block):
             parameters=parameters,
         )
         self.sample_time = float(sample_time)
+        self.offset = float(offset)
+        self.priority = priority
 
     def update_state(self, ctx: ExecutionContext, inputs: Mapping[str, Any], state: Any) -> Any:
         raise NotImplementedError(f"{self.__class__.__name__}.update_state() must be implemented.")

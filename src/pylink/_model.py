@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -30,6 +31,10 @@ class _NormalizedBlock:
     kind: str
     direct_feedthrough: bool
     sample_time: float | None
+    offset: float | None
+    priority: int | None
+    resolved_priority: int | None
+    rate_group: dict[str, Any] | None
     input_ports: tuple[_NormalizedPort, ...]
     output_ports: tuple[_NormalizedPort, ...]
 
@@ -46,6 +51,10 @@ class _NormalizedBlock:
             "kind": self.kind,
             "direct_feedthrough": self.direct_feedthrough,
             "sample_time": self.sample_time,
+            "offset": self.offset,
+            "priority": self.priority,
+            "resolved_priority": self.resolved_priority,
+            "rate_group": deepcopy(self.rate_group) if self.rate_group is not None else None,
             "inputs": [spec.summary() for spec in self.input_ports],
             "outputs": [spec.summary() for spec in self.output_ports],
         }
@@ -96,6 +105,8 @@ def normalize_system(system: System) -> _NormalizedModel:
     normalized_blocks: list[_NormalizedBlock] = []
     for block_name, block in system.blocks.items():
         sample_time = float(block.sample_time) if isinstance(block, DiscreteBlock) else None
+        offset = float(block.offset) if isinstance(block, DiscreteBlock) else None
+        priority = block.priority if isinstance(block, DiscreteBlock) else None
         normalized_blocks.append(
             _NormalizedBlock(
                 name=block_name,
@@ -103,6 +114,10 @@ def normalize_system(system: System) -> _NormalizedModel:
                 kind=_block_kind(block),
                 direct_feedthrough=block.direct_feedthrough,
                 sample_time=sample_time,
+                offset=offset,
+                priority=priority,
+                resolved_priority=None,
+                rate_group=None,
                 input_ports=tuple(
                     _NormalizedPort(
                         name=spec.name,
@@ -147,9 +162,18 @@ def build_model_summary(
     block_order: tuple[str, ...] | None,
     config: Any | None = None,
     hierarchy: dict[str, Any] | None = None,
+    rate_groups: list[dict[str, Any]] | None = None,
+    cross_rate_connections: list[dict[str, Any]] | None = None,
+    execution_notes: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     discrete_blocks = [
-        {"name": block.name, "sample_time": block.sample_time}
+        {
+            "name": block.name,
+            "sample_time": block.sample_time,
+            "offset": block.offset,
+            "priority": block.priority,
+            "resolved_priority": block.resolved_priority,
+        }
         for block in model.blocks
         if block.kind == "discrete"
     ]
@@ -178,6 +202,10 @@ def build_model_summary(
             "rules": [
                 "(stop - start) must be an integer multiple of dt.",
                 "Each discrete block sample_time must be an integer multiple of dt.",
+                "Each discrete block offset must be an integer multiple of dt.",
             ],
         },
+        "rate_groups": list(rate_groups or []),
+        "cross_rate_connections": list(cross_rate_connections or []),
+        "execution_notes": dict(execution_notes or {}),
     }

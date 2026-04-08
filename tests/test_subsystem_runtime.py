@@ -25,7 +25,7 @@ def test_hierarchical_continuous_and_discrete_system_runs():
     result = simulator.run(build_hierarchical_closed_loop(), config)
 
     assert report.is_valid is True
-    assert result.final_outputs["plant"]["y"] == pytest.approx(0.659695654, rel=1e-6)
+    assert result.final_outputs["plant"]["y"] == pytest.approx(0.6435457229360751, rel=1e-6)
 
 
 def test_multi_rate_nested_control_remains_valid():
@@ -48,7 +48,7 @@ def test_multi_rate_nested_control_remains_valid():
     result = simulator.run(system, config)
 
     assert report.is_valid is True
-    assert result.final_continuous_states["plant"] == pytest.approx(0.2, abs=1e-6)
+    assert result.final_continuous_states["plant"] == pytest.approx(0.3, abs=1e-6)
 
 
 def test_deeply_nested_runs_are_deterministic():

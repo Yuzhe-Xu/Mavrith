@@ -81,6 +81,7 @@ Examples:
 - the block has sampled state
 - the state updates only on discrete sample hits
 - the output is based on stored discrete state
+- the block should run on a periodic clock described by `sample_time`, optional `offset`, and optional `priority`
 
 Examples:
 
@@ -173,7 +174,7 @@ class Counter(DiscreteBlock):
     outputs = (PortSpec.output("count"),)
 
     def __init__(self) -> None:
-        super().__init__(sample_time=1.0, direct_feedthrough=False)
+        super().__init__(sample_time=1.0, offset=0.0, direct_feedthrough=False)
 
     def initial_discrete_state(self):
         return 0
@@ -244,8 +245,24 @@ Rules:
 
 - it is called only when the block sample time hits the global simulation clock
 - the `state` argument is the current committed discrete state
-- the returned value becomes visible after the step commit
+- the returned value becomes visible as soon as that discrete rate group commits at the current sample hit
 - write it as a pure state transition when possible
+
+## Discrete clock semantics
+
+Each `DiscreteBlock` may define:
+
+- `sample_time`: positive period
+- `offset`: absolute offset with `0 <= offset < sample_time`
+- `priority`: optional integer priority; lower values run first
+
+Important:
+
+- sample hits follow `t = n * sample_time + offset`
+- when two rate groups hit at the same time, lower `priority` runs first
+- if a rate group does not declare `priority`, the compiler assigns a stable one
+- after one discrete rate group commits, downstream direct-feedthrough logic is re-evaluated before later groups at the same time run
+- cross-rate connections are allowed, but `validate()` reports them as warnings with explicit classifications
 
 ### `ContinuousBlock.initial_continuous_state()`
 
@@ -363,7 +380,9 @@ Rules:
 - `stop` must be greater than or equal to `start`
 - `(stop - start)` must be an integer multiple of `dt`
 - for each `DiscreteBlock`, `sample_time / dt` must be an integer
-- if a discrete controller is used in an example, choose `sample_time` so it divides the chosen `dt` cleanly
+- for each `DiscreteBlock`, `offset / dt` must be an integer
+- `start`, `dt`, and `offset` must align so sample hits land on the simulation grid
+- if a discrete controller is used in an example, choose `sample_time`, `offset`, and `dt` together so the sample hits are exact
 
 ## Runtime semantics
 
@@ -371,18 +390,19 @@ The simulation loop is fixed-step and deterministic.
 
 At a high level:
 
-1. evaluate outputs at the current time
-2. resolve current inputs from those outputs
-3. advance continuous states over one step with the solver
-4. update discrete states on sample hits
-5. commit next states
-6. evaluate outputs at the next time point
+1. evaluate outputs from the current committed states at the current time
+2. run all discrete rate groups that hit at that time, in priority order
+3. after each rate-group commit, re-evaluate downstream direct-feedthrough outputs
+4. record the final visible outputs for that time point
+5. advance continuous states over one fixed step using those final visible discrete outputs
+6. repeat at the next simulation time point
 
 Important consequences:
 
-- discrete state updates become visible after the step commit
+- discrete state updates become visible immediately after their rate group commits
 - a discrete block output typically reflects the stored state, not the just-read
   input
+- lower-priority tasks at the same time can observe updates committed by higher-priority tasks
 - continuous blocks are integrated by SciPy within each fixed step
 - output and input `SignalSpec` values are checked once at `t=start` as a runtime safeguard
 - because the solver may evaluate intermediate candidate times, `output()` and
@@ -439,8 +459,8 @@ The report contains:
 - `is_valid`
 - `diagnostics`
 - a deterministic model summary with blocks, ports, connections, execution
-  order, stateful blocks, time-grid constraints, and structured `signal_spec`
-  summaries
+  order, stateful blocks, time-grid constraints, resolved rate groups,
+  cross-rate connections, and structured `signal_spec` summaries
 
 Each `Diagnostic` includes:
 
@@ -454,6 +474,7 @@ Common validation codes now include:
 
 - graph issues such as missing ports, duplicate input connections, and algebraic loops
 - time-grid issues such as incompatible discrete sample times
+- time-grid issues such as incompatible discrete offsets
 - `SignalSpec` issues such as `INCOMPATIBLE_PORT_TYPE`,
   `INCOMPATIBLE_PORT_SHAPE`, `OUTPUT_TYPE_MISMATCH`, and
   `INPUT_SHAPE_MISMATCH`
@@ -504,8 +525,19 @@ class Accumulator(DiscreteBlock):
     inputs = (PortSpec.input("u", spec=FLOAT_SCALAR),)
     outputs = (PortSpec.output("x", spec=FLOAT_SCALAR),)
 
-    def __init__(self, sample_time: float) -> None:
-        super().__init__(sample_time=sample_time, direct_feedthrough=False)
+    def __init__(
+        self,
+        sample_time: float,
+        *,
+        offset: float = 0.0,
+        priority: int | None = None,
+    ) -> None:
+        super().__init__(
+            sample_time=sample_time,
+            offset=offset,
+            priority=priority,
+            direct_feedthrough=False,
+        )
 
     def initial_discrete_state(self):
         return 0.0
@@ -577,6 +609,7 @@ See these examples before inventing new patterns:
 - `examples/vehicle_path_tracking.py`
 - `examples/cruise_control.py`
 - `examples/mass_spring_damper.py`
+- `examples/multirate_offset_priority.py`
 
 These show the intended style for:
 
