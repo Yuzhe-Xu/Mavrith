@@ -15,10 +15,10 @@ try:
     import yaml
 except ImportError as exc:
     raise SystemExit(
-        "Manifest export requires PyYAML. Install pylink[yaml] or add PyYAML to your environment."
+        "Manifest export requires PyYAML. Install mavrith[yaml] or add PyYAML to your environment."
     ) from exc
 
-from pylink import SimulationConfig, build_detail_manifest, write_manifest_bundle
+from mavrith import SimulationConfig, build_detail_manifest, write_manifest_bundle
 from water_cooling import build_system
 
 
@@ -28,7 +28,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--out-dir",
-        default=str(REPO_ROOT / ".pylink-ai" / "water_cooling"),
+        default=str(REPO_ROOT / ".mavrith-ai" / "water_cooling"),
         help="Output directory for graph/detail manifests.",
     )
     parser.add_argument(

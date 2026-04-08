@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from pylink import AlgebraicLoopError, Block, ContinuousBlock, PortSpec, Simulator, System
+from mavrith import AlgebraicLoopError, Block, ContinuousBlock, PortSpec, Simulator, System
 
 
 class Source(Block):

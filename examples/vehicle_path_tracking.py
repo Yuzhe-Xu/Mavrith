@@ -10,7 +10,7 @@ import math
 
 import numpy as np
 
-from pylink import (
+from mavrith import (
     Block,
     ContinuousBlock,
     DiscreteBlock,

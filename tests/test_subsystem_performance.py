@@ -4,7 +4,7 @@ from time import perf_counter
 
 import pytest
 
-from pylink import SimulationConfig, Simulator, System
+from mavrith import SimulationConfig, Simulator, System
 
 from subsystem_helpers import Constant, Echo, PerformanceCase, build_hierarchical_chain
 

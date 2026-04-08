@@ -1,6 +1,6 @@
-# pylink
+# Mavrith
 
-`pylink` is a pure Python framework for building block-based dynamic systems in code.
+Mavrith is a pure Python framework for building block-based dynamic systems in code.
 It is intentionally small: the library provides the simulation kernel, while users
 define domain-specific blocks themselves.
 
@@ -133,7 +133,7 @@ hold semantics.
 ## Quick Example
 
 ```python
-from pylink import (
+from mavrith import (
     Block,
     ContinuousBlock,
     PortSpec,
@@ -199,7 +199,7 @@ else:
 Vector ports use the same API:
 
 ```python
-from pylink import Block, PortSpec, SignalSpec
+from mavrith import Block, PortSpec, SignalSpec
 
 VECTOR3 = SignalSpec(dtype="float", shape=(3,))
 
@@ -254,7 +254,7 @@ This makes it easier for AI tools to inspect, compare, and repair models.
 
 ## AI Manifest Export
 
-`pylink` can now export an AI-oriented graph/detail view without changing the
+`mavrith` can now export an AI-oriented graph/detail view without changing the
 Python DSL or turning YAML into a second source of truth.
 
 - `build_graph_manifest(system)` returns a topology-first graph manifest
@@ -267,14 +267,14 @@ Python DSL or turning YAML into a second source of truth.
 Example:
 
 ```python
-from pylink import SimulationConfig, build_detail_manifest, build_graph_manifest, write_manifest_bundle
+from mavrith import SimulationConfig, build_detail_manifest, build_graph_manifest, write_manifest_bundle
 
 graph = build_graph_manifest(system)
 root_detail = build_detail_manifest(
     system,
     config=SimulationConfig(start=0.0, stop=1.0, dt=0.1),
 )
-bundle = write_manifest_bundle(system, ".pylink-ai")
+bundle = write_manifest_bundle(system, ".mavrith-ai")
 ```
 
 If you also want config-aware execution and timing analysis in YAML, write a
@@ -288,7 +288,7 @@ runtime_detail = build_detail_manifest(
     config=SimulationConfig(start=0.0, stop=1.0, dt=0.1),
 )
 
-with open(".pylink-ai/detail/system.runtime.yaml", "w", encoding="utf-8") as handle:
+with open(".mavrith-ai/detail/system.runtime.yaml", "w", encoding="utf-8") as handle:
     yaml.safe_dump(runtime_detail, handle, sort_keys=False, allow_unicode=False)
 ```
 

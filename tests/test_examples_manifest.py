@@ -8,7 +8,7 @@ import yaml
 from examples.closed_loop import build_system as build_closed_loop_system
 from examples.multirate_offset_priority import build_system as build_multirate_offset_priority_system
 from examples.water_cooling import build_system as build_water_cooling_system
-from pylink import (
+from mavrith import (
     SimulationConfig,
     build_detail_manifest,
     build_graph_manifest,
@@ -59,7 +59,7 @@ def test_example_manifests_build_in_memory(
     component_detail = build_detail_manifest(system, path=component_path)
     root_detail = build_detail_manifest(system, config=config)
 
-    assert graph["manifest_kind"] == "pylink_graph"
+    assert graph["manifest_kind"] == "mavrith_graph"
     assert graph["system_name"] == name
     assert graph["root"]["detail_ref"] == "detail/system.yaml"
     assert graph["containers"][0]["path"] == ""

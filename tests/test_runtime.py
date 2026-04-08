@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from pylink import (
+from mavrith import (
     Block,
     ContinuousBlock,
     DiscreteBlock,

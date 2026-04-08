@@ -3,7 +3,7 @@ from __future__ import annotations
 from .diagnostics import Diagnostic
 
 
-class PylinkError(Exception):
+class MavrithError(Exception):
     """Base exception for the framework."""
 
     def __init__(
@@ -25,7 +25,7 @@ class PylinkError(Exception):
         super().__init__(" | ".join(fragments))
 
 
-class ModelValidationError(PylinkError):
+class ModelValidationError(MavrithError):
     """Raised when the system graph or block declarations are invalid."""
 
     @classmethod
@@ -41,7 +41,7 @@ class AlgebraicLoopError(ModelValidationError):
     """Raised when direct-feedthrough dependencies create an algebraic loop."""
 
 
-class SimulationError(PylinkError):
+class SimulationError(MavrithError):
     """Raised when a block or the simulator fails during execution."""
 
     def __init__(

@@ -9,7 +9,7 @@ from .core import (
     SignalSpec,
 )
 from .diagnostics import Diagnostic, ValidationReport
-from .errors import AlgebraicLoopError, ModelValidationError, PylinkError, SimulationError
+from .errors import AlgebraicLoopError, ModelValidationError, MavrithError, SimulationError
 from ._manifest import ExportResult, build_detail_manifest, build_graph_manifest, write_manifest_bundle
 from .simulation import (
     SimulationConfig,
@@ -35,7 +35,7 @@ __all__ = [
     "ModelValidationError",
     "PortDirection",
     "PortSpec",
-    "PylinkError",
+    "MavrithError",
     "SignalSpec",
     "SciPySolver",
     "SimulationConfig",

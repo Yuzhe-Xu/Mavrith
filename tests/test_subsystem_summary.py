@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pylink import SimulationConfig, Simulator, System
+from mavrith import SimulationConfig, Simulator, System
 
 from subsystem_helpers import Constant, Echo, build_gain_hold_subsystem, build_hierarchical_closed_loop
 

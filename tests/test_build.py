@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from pylink import Block, ModelValidationError, PortSpec, Simulator, System
+from mavrith import Block, ModelValidationError, PortSpec, Simulator, System
 
 
 class Source(Block):

@@ -15,7 +15,7 @@ from examples.vehicle_path_tracking import (
     build_system as build_vehicle_path_tracking_system,
 )
 from examples.water_cooling import build_system as build_water_cooling_system
-from pylink import SimulationConfig, Simulator
+from mavrith import SimulationConfig, Simulator
 
 
 def test_closed_loop_example_is_valid_and_has_stable_summary():

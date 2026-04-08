@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from pylink import ModelValidationError, SimulationConfig, Simulator, Subsystem, System
+from mavrith import ModelValidationError, SimulationConfig, Simulator, Subsystem, System
 
 from subsystem_helpers import FLOAT_SCALAR, Constant, build_passthrough_subsystem
 

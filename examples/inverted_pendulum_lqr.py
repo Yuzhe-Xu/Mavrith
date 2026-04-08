@@ -10,7 +10,7 @@ import numpy as np
 from scipy.linalg import solve_discrete_are
 from scipy.signal import cont2discrete
 
-from pylink import (
+from mavrith import (
     Block,
     ContinuousBlock,
     DiscreteBlock,

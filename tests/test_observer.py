@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pylink import Block, PortSpec, SimulationConfig, Simulator, StepSnapshot, System
+from mavrith import Block, PortSpec, SimulationConfig, Simulator, StepSnapshot, System
 
 
 class Constant(Block):

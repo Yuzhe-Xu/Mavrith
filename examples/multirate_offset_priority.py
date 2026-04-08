@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Minimal multirate example with offset and priority-aware scheduling."""
 
-from pylink import (
+from mavrith import (
     Block,
     ContinuousBlock,
     DiscreteBlock,

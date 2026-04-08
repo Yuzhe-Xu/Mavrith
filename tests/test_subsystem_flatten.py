@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pylink import SimulationConfig, Simulator, Subsystem, System
+from mavrith import SimulationConfig, Simulator, Subsystem, System
 
 from subsystem_helpers import (
     FLOAT_SCALAR,

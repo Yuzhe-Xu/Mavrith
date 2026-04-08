@@ -1,12 +1,12 @@
-# pylink Guide for Coding Agents
+# Mavrith Guide for Coding Agents
 
 This file is for LLM-based coding agents such as Codex. It explains how to use
-`pylink` correctly when generating code that builds or simulates systems with
+`mavrith` correctly when generating code that builds or simulates systems with
 blocks and connections.
 
-## What `pylink` is
+## What Mavrith Is
 
-`pylink` is a lightweight block-based simulation framework for Python.
+Mavrith is a lightweight block-based simulation framework for Python.
 
 It provides:
 
@@ -39,7 +39,7 @@ by the user as custom blocks**.
 Import from the public package namespace:
 
 ```python
-from pylink import (
+from mavrith import (
     Block,
     ContinuousBlock,
     Diagnostic,
@@ -60,12 +60,12 @@ from pylink import (
 )
 ```
 
-Do not import from internal modules such as `pylink.core` unless the caller
+Do not import from internal modules such as `mavrith.core` unless the caller
 explicitly asks for internals.
 
 ## AI manifest export workflow
 
-`pylink` now supports a derived AI-facing manifest layer. The Python model
+`mavrith` now supports a derived AI-facing manifest layer. The Python model
 remains the source of truth.
 
 Use this workflow:
@@ -552,7 +552,7 @@ Common validation codes now include:
 
 ## Recommended coding pattern for agents
 
-When asked to model a system with `pylink`, follow this order:
+When asked to model a system with `mavrith`, follow this order:
 
 1. identify signals
 2. identify stateful quantities

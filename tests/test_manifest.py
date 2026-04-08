@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 
-from pylink import (
+from mavrith import (
     Block,
     PortSpec,
     SimulationConfig,
@@ -100,7 +100,7 @@ def test_graph_manifest_is_deterministic_and_preserves_local_topology():
     second = build_graph_manifest(system)
 
     assert first == second
-    assert first["manifest_kind"] == "pylink_graph"
+    assert first["manifest_kind"] == "mavrith_graph"
     assert first["root"]["detail_ref"] == "detail/system.yaml"
 
     root = first["containers"][0]

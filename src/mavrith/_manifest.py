@@ -11,7 +11,7 @@ from typing import Any, Mapping
 import numpy as np
 
 from .core import Block, ContinuousBlock, DiscreteBlock
-from .errors import ModelValidationError, PylinkError
+from .errors import ModelValidationError, MavrithError
 from .simulation import SimulationConfig, Simulator
 from .system import SourceRef, Subsystem, System
 
@@ -397,7 +397,7 @@ def _build_graph_manifest_from_context(context: _ManifestContext) -> dict[str, A
 
     return {
         "schema_version": _SCHEMA_VERSION,
-        "manifest_kind": "pylink_graph",
+        "manifest_kind": "mavrith_graph",
         "system_name": context.system.name,
         "root": {
             "name": context.system.name,
@@ -412,7 +412,7 @@ def _build_graph_manifest_from_context(context: _ManifestContext) -> dict[str, A
 def _build_detail_index(context: _ManifestContext) -> dict[str, Any]:
     return {
         "schema_version": _SCHEMA_VERSION,
-        "manifest_kind": "pylink_detail_index",
+        "manifest_kind": "mavrith_detail_index",
         "system_name": context.system.name,
         "root_detail_ref": _detail_ref_for_path(""),
         "entries": [
@@ -434,7 +434,7 @@ def _block_detail(context: _ManifestContext, node: _ComponentNode) -> dict[str, 
     parameter_summary = _build_parameter_summary(block)
     return {
         "schema_version": _SCHEMA_VERSION,
-        "manifest_kind": "pylink_detail",
+        "manifest_kind": "mavrith_detail",
         "system_name": context.system.name,
         "id": node.path,
         "path": node.path,
@@ -535,7 +535,7 @@ def _container_detail(
     description, description_origin = _effective_description(container)
     detail = {
         "schema_version": _SCHEMA_VERSION,
-        "manifest_kind": "pylink_detail",
+        "manifest_kind": "mavrith_detail",
         "system_name": context.system.name,
         "id": context.system.name if node.kind == "system" else node.path,
         "path": node.path,
@@ -612,10 +612,10 @@ def _load_yaml(path: Path) -> Any:
     try:
         import yaml
     except ImportError as exc:
-        raise PylinkError(
+        raise MavrithError(
             "YAML export requires the optional PyYAML dependency.",
             code="YAML_SUPPORT_UNAVAILABLE",
-            suggestion="Install pylink[yaml] or add PyYAML to your environment.",
+            suggestion="Install mavrith[yaml] or add PyYAML to your environment.",
         ) from exc
     if not path.exists():
         return None
@@ -627,10 +627,10 @@ def _write_yaml(path: Path, data: Any) -> None:
     try:
         import yaml
     except ImportError as exc:
-        raise PylinkError(
+        raise MavrithError(
             "YAML export requires the optional PyYAML dependency.",
             code="YAML_SUPPORT_UNAVAILABLE",
-            suggestion="Install pylink[yaml] or add PyYAML to your environment.",
+            suggestion="Install mavrith[yaml] or add PyYAML to your environment.",
         ) from exc
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="\n") as handle:
@@ -699,7 +699,7 @@ def write_manifest_bundle(
         detail_bundle_path,
         {
             "schema_version": _SCHEMA_VERSION,
-            "manifest_kind": "pylink_detail_bundle",
+            "manifest_kind": "mavrith_detail_bundle",
             "system_name": context.system.name,
             "index": _build_detail_index(context),
             "details": details,

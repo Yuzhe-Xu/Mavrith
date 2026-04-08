@@ -9,7 +9,7 @@ Inspired by:
 
 import math
 
-from pylink import (
+from mavrith import (
     Block,
     ContinuousBlock,
     DiscreteBlock,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pylink import (
+from mavrith import (
     Block,
     ContinuousBlock,
     PortSpec,
