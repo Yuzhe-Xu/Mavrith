@@ -1,10 +1,44 @@
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterable
 
 from .core import Block, SignalSpec
 from .errors import ModelValidationError
+
+
+@dataclass(frozen=True, slots=True)
+class SourceRef:
+    file: str
+    line: int
+    function: str | None = None
+
+    def summary(self) -> dict[str, object]:
+        return {
+            "file": self.file,
+            "line": self.line,
+            "function": self.function,
+        }
+
+
+def _capture_source_ref() -> SourceRef | None:
+    frame = inspect.currentframe()
+    try:
+        current = frame.f_back if frame is not None else None
+        while current is not None and current.f_globals.get("__name__") == __name__:
+            current = current.f_back
+        if current is None:
+            return None
+        filename = current.f_code.co_filename
+        return SourceRef(
+            file=str(Path(filename).resolve()),
+            line=current.f_lineno,
+            function=current.f_code.co_name,
+        )
+    finally:
+        del frame
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +71,7 @@ class Endpoint:
 class Connection:
     source: Endpoint
     target: Endpoint
+    source_ref: SourceRef | None = None
 
     def __str__(self) -> str:
         return f"{self.source} -> {self.target}"
@@ -48,6 +83,7 @@ class ExposedInput:
     required: bool
     signal_spec: SignalSpec
     targets: tuple[Endpoint, ...]
+    source_refs: tuple[SourceRef | None, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +91,7 @@ class ExposedOutput:
     name: str
     signal_spec: SignalSpec
     source: Endpoint
+    source_ref: SourceRef | None = None
 
 
 def _validate_component_name(name: str, *, allow_hierarchy_path: bool = False) -> None:
@@ -100,6 +137,7 @@ class _ComponentContainer:
         self.subsystems: dict[str, Subsystem] = {}
         self.connections: list[Connection] = []
         self._component_order: list[str] = []
+        self._component_source_refs: dict[str, SourceRef | None] = {}
 
     def add_block(self, name: str, block: Block) -> "_ComponentContainer":
         _validate_component_name(name)
@@ -117,6 +155,7 @@ class _ComponentContainer:
             )
         self.blocks[name] = block
         self._component_order.append(name)
+        self._component_source_refs[name] = _capture_source_ref()
         return self
 
     def _add_flat_block(self, name: str, block: Block) -> "_ComponentContainer":
@@ -129,6 +168,7 @@ class _ComponentContainer:
             )
         self.blocks[name] = block
         self._component_order.append(name)
+        self._component_source_refs[name] = _capture_source_ref()
         return self
 
     def add_subsystem(self, name: str, subsystem: "Subsystem") -> "_ComponentContainer":
@@ -141,16 +181,26 @@ class _ComponentContainer:
             )
         self.subsystems[name] = subsystem
         self._component_order.append(name)
+        self._component_source_refs[name] = _capture_source_ref()
         return self
 
     def connect(self, source: str, target: str) -> "_ComponentContainer":
-        self.connections.append(Connection(source=Endpoint.parse(source), target=Endpoint.parse(target)))
+        self.connections.append(
+            Connection(
+                source=Endpoint.parse(source),
+                target=Endpoint.parse(target),
+                source_ref=_capture_source_ref(),
+            )
+        )
         return self
 
     def get_component(self, name: str) -> Block | "Subsystem" | None:
         if name in self.blocks:
             return self.blocks[name]
         return self.subsystems.get(name)
+
+    def get_component_source_ref(self, name: str) -> SourceRef | None:
+        return self._component_source_refs.get(name)
 
     def iter_components(self) -> Iterable[tuple[str, Block | "Subsystem"]]:
         for name in self._component_order:
@@ -174,8 +224,11 @@ class System(_ComponentContainer):
 
 
 class Subsystem(_ComponentContainer):
-    def __init__(self, name: str = "subsystem") -> None:
+    def __init__(self, name: str = "subsystem", *, description: str | None = None) -> None:
         super().__init__(name=name)
+        if description is not None and not isinstance(description, str):
+            raise TypeError("description must be a string or None.")
+        self.description = description.strip() if description is not None else None
         self._exposed_inputs: dict[str, ExposedInput] = {}
         self._exposed_outputs: dict[str, ExposedOutput] = {}
 
@@ -199,12 +252,14 @@ class Subsystem(_ComponentContainer):
         endpoint = Endpoint.parse(target)
         existing = self._exposed_inputs.get(name)
         signal_spec = spec or SignalSpec()
+        source_ref = _capture_source_ref()
         if existing is None:
             self._exposed_inputs[name] = ExposedInput(
                 name=name,
                 required=required,
                 signal_spec=signal_spec,
                 targets=(endpoint,),
+                source_refs=(source_ref,),
             )
             return self
         if existing.required != required:
@@ -230,6 +285,7 @@ class Subsystem(_ComponentContainer):
             required=existing.required,
             signal_spec=existing.signal_spec,
             targets=existing.targets + (endpoint,),
+            source_refs=existing.source_refs + (source_ref,),
         )
         return self
 
@@ -251,5 +307,6 @@ class Subsystem(_ComponentContainer):
             name=name,
             signal_spec=spec or SignalSpec(),
             source=Endpoint.parse(source),
+            source_ref=_capture_source_ref(),
         )
         return self

@@ -20,7 +20,11 @@ class Setpoint(Block):
     outputs = (PortSpec.output("value", spec=FLOAT_SCALAR),)
 
     def __init__(self, value: float) -> None:
-        super().__init__(direct_feedthrough=False)
+        super().__init__(
+            direct_feedthrough=False,
+            parameters={"value": value},
+            description="Constant reference source for the closed-loop example.",
+        )
         self.value = value
 
     def output(self, ctx, inputs):
@@ -37,7 +41,10 @@ class ErrorBlock(Block):
     outputs = (PortSpec.output("error", spec=FLOAT_SCALAR),)
 
     def __init__(self) -> None:
-        super().__init__(direct_feedthrough=True)
+        super().__init__(
+            direct_feedthrough=True,
+            description="Computes setpoint minus measurement for the feedback loop.",
+        )
 
     def output(self, ctx, inputs):
         return inputs["setpoint"] - inputs["measurement"]
@@ -50,7 +57,12 @@ class ProportionalController(DiscreteBlock):
     outputs = (PortSpec.output("command", spec=FLOAT_SCALAR),)
 
     def __init__(self, gain: float, sample_time: float) -> None:
-        super().__init__(sample_time=sample_time, direct_feedthrough=False)
+        super().__init__(
+            sample_time=sample_time,
+            direct_feedthrough=False,
+            parameters={"gain": gain},
+            description="Sampled proportional controller whose output is stored in discrete state.",
+        )
         self.gain = gain
 
     def initial_discrete_state(self):
@@ -70,7 +82,11 @@ class FirstOrderPlant(ContinuousBlock):
     outputs = (PortSpec.output("y", spec=FLOAT_SCALAR),)
 
     def __init__(self, initial: float = 0.0) -> None:
-        super().__init__(direct_feedthrough=False)
+        super().__init__(
+            direct_feedthrough=False,
+            parameters={"initial": initial},
+            description="First-order plant driven by the controller command.",
+        )
         self.initial = initial
 
     def initial_continuous_state(self):

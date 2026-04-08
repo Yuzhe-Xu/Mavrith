@@ -157,11 +157,15 @@ class Block:
         outputs: Sequence[PortSpec] | None = None,
         direct_feedthrough: bool = True,
         parameters: Mapping[str, Any] | None = None,
+        description: str | None = None,
     ) -> None:
+        if description is not None and not isinstance(description, str):
+            raise TypeError("description must be a string or None.")
         self.input_ports = _normalize_port_specs(inputs or self.inputs, PortDirection.INPUT)
         self.output_ports = _normalize_port_specs(outputs or self.outputs, PortDirection.OUTPUT)
         self.direct_feedthrough = direct_feedthrough
         self.parameters = MappingProxyType(dict(parameters or {}))
+        self.description = description.strip() if description is not None else None
 
     def get_input_spec(self, port_name: str) -> PortSpec | None:
         return next((spec for spec in self.input_ports if spec.name == port_name), None)
@@ -194,6 +198,7 @@ class DiscreteBlock(Block):
         outputs: Sequence[PortSpec] | None = None,
         direct_feedthrough: bool = False,
         parameters: Mapping[str, Any] | None = None,
+        description: str | None = None,
     ) -> None:
         if sample_time <= 0:
             raise ValueError("sample_time must be positive.")
@@ -208,6 +213,7 @@ class DiscreteBlock(Block):
             outputs=outputs,
             direct_feedthrough=direct_feedthrough,
             parameters=parameters,
+            description=description,
         )
         self.sample_time = float(sample_time)
         self.offset = float(offset)
@@ -227,12 +233,14 @@ class ContinuousBlock(Block):
         outputs: Sequence[PortSpec] | None = None,
         direct_feedthrough: bool = False,
         parameters: Mapping[str, Any] | None = None,
+        description: str | None = None,
     ) -> None:
         super().__init__(
             inputs=inputs,
             outputs=outputs,
             direct_feedthrough=direct_feedthrough,
             parameters=parameters,
+            description=description,
         )
 
     def derivative(self, ctx: ExecutionContext, inputs: Mapping[str, Any], state: Any) -> Any:

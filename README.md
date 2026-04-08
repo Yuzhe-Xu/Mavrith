@@ -21,6 +21,7 @@ an extra graphical tool or a large built-in block catalog.
 - Fixed-step simulation with SciPy-backed continuous integration
 - Structured validation reports for AI-friendly diagnostics
 - Observer hooks for tracing and lightweight result collection
+- AI-oriented graph/detail manifest export for large-model navigation
 
 ## What It Does Not Do
 
@@ -60,8 +61,9 @@ Use one consistent authoring style so humans and AI tools both have a stable tar
 2. Use `Block` for stateless transforms and constant sources.
 3. Use `DiscreteBlock` when output comes from sampled state.
 4. Use `ContinuousBlock` when output comes from continuous state.
-5. Keep one `build_system()` function per non-trivial example.
-6. Call `Simulator.validate(...)` before `run(...)`.
+5. Use `parameters=...` for stable exported tuning parameters and `description=...` for human-authored semantics when a block or subsystem is externally meaningful.
+6. Keep one `build_system()` function per non-trivial example.
+7. Call `Simulator.validate(...)` before `run(...)`.
 
 Use `SignalSpec` when a port should declare its expected dtype and shape:
 
@@ -225,6 +227,7 @@ Examples:
 python -m pytest -q
 $env:PYTHONPATH = "src"
 python -m examples.water_cooling
+python examples/export_water_cooling_manifest.py
 python -m examples.vehicle_path_tracking
 ```
 
@@ -249,10 +252,97 @@ Validation currently happens in two stages:
 
 This makes it easier for AI tools to inspect, compare, and repair models.
 
+## AI Manifest Export
+
+`pylink` can now export an AI-oriented graph/detail view without changing the
+Python DSL or turning YAML into a second source of truth.
+
+- `build_graph_manifest(system)` returns a topology-first graph manifest
+- `build_detail_manifest(system, path=..., config=...)` returns one detail shard
+- `write_manifest_bundle(system, out_dir)` writes:
+  - `graph.yaml`
+  - `detail/index.yaml`
+  - one detail YAML per system/block/subsystem
+
+Example:
+
+```python
+from pylink import SimulationConfig, build_detail_manifest, build_graph_manifest, write_manifest_bundle
+
+graph = build_graph_manifest(system)
+root_detail = build_detail_manifest(
+    system,
+    config=SimulationConfig(start=0.0, stop=1.0, dt=0.1),
+)
+bundle = write_manifest_bundle(system, ".pylink-ai")
+```
+
+If you also want config-aware execution and timing analysis in YAML, write a
+separate root detail snapshot:
+
+```python
+import yaml
+
+runtime_detail = build_detail_manifest(
+    system,
+    config=SimulationConfig(start=0.0, stop=1.0, dt=0.1),
+)
+
+with open(".pylink-ai/detail/system.runtime.yaml", "w", encoding="utf-8") as handle:
+    yaml.safe_dump(runtime_detail, handle, sort_keys=False, allow_unicode=False)
+```
+
+The manifest layer is designed for AI navigation:
+
+- `graph` stays lightweight and only describes children plus local connections
+- `detail` includes port contracts, parameters, source locations, descriptions,
+  and implementation fingerprints
+- repeated exports keep Python as the source of truth and flag human-written
+  descriptions with `review_recommended` when implementation changes but the
+  description text does not
+- manifest generation is explicit; `validate()`, `compile()`, and `run()` never
+  write YAML files
+
+Recommended AI reading order when a manifest bundle exists:
+
+1. `graph.yaml`
+2. `detail/index.yaml`
+3. the relevant `detail/<path>.yaml` shard(s)
+4. the referenced Python source files
+
+If a project also writes `detail/system.runtime.yaml`, read it after the
+relevant detail shard when execution order, rate groups, or time-grid behavior
+matter.
+
+Recommended refresh loop when AI is writing the model:
+
+1. update the Python source
+2. re-export the manifest bundle explicitly
+3. let the AI inspect `graph` first, then `detail`, then source
+4. re-run validation or simulation if behavior changed
+
+For block authors:
+
+- `parameters=...` is the stable exported parameter contract
+- `description=...` on `Block(...)` or `Subsystem(...)` is the preferred
+  human-authored explanation field
+- if no explicit description is provided, block class docstrings are used as a
+  fallback
+
+If you want YAML output support in a minimal environment, install the optional
+extra:
+
+```powershell
+pip install -e ".[yaml]"
+```
+
 ## Cookbook
 
 The repository examples follow the same style on purpose:
 
+- `examples/export_water_cooling_manifest.py`
+  - standalone manifest export script for the water cooling example
+  - writes `graph.yaml`, `detail/index.yaml`, component detail shards, and `detail/system.runtime.yaml`
 - `examples/closed_loop.py`
   - setpoint -> error -> controller -> plant
   - useful starting point for control and signal-flow models

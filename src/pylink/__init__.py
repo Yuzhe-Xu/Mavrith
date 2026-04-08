@@ -10,6 +10,7 @@ from .core import (
 )
 from .diagnostics import Diagnostic, ValidationReport
 from .errors import AlgebraicLoopError, ModelValidationError, PylinkError, SimulationError
+from ._manifest import ExportResult, build_detail_manifest, build_graph_manifest, write_manifest_bundle
 from .simulation import (
     SimulationConfig,
     SimulationObserver,
@@ -30,6 +31,7 @@ __all__ = [
     "Endpoint",
     "ExecutionContext",
     "ExecutionPlan",
+    "ExportResult",
     "ModelValidationError",
     "PortDirection",
     "PortSpec",
@@ -46,4 +48,7 @@ __all__ = [
     "Subsystem",
     "System",
     "ValidationReport",
+    "build_detail_manifest",
+    "build_graph_manifest",
+    "write_manifest_bundle",
 ]

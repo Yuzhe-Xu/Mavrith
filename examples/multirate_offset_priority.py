@@ -28,6 +28,7 @@ class Incrementer(DiscreteBlock):
             offset=offset,
             priority=priority,
             direct_feedthrough=False,
+            description="Sampled counter source used to demonstrate priority-ordered rate groups.",
         )
 
     def initial_discrete_state(self):
@@ -47,7 +48,11 @@ class Gain(Block):
     outputs = (PortSpec.output("y", spec=FLOAT_SCALAR),)
 
     def __init__(self, gain: float) -> None:
-        super().__init__(direct_feedthrough=True)
+        super().__init__(
+            direct_feedthrough=True,
+            parameters={"gain": gain},
+            description="Algebraic gain block shared by the discrete observers and continuous plant.",
+        )
         self.gain = gain
 
     def output(self, ctx, inputs):
@@ -66,6 +71,7 @@ class Capture(DiscreteBlock):
             offset=offset,
             priority=priority,
             direct_feedthrough=False,
+            description="Sampled capture block that records the visible signal on its own schedule.",
         )
 
     def initial_discrete_state(self):
@@ -85,7 +91,10 @@ class Integrator(ContinuousBlock):
     outputs = (PortSpec.output("x", spec=FLOAT_SCALAR),)
 
     def __init__(self) -> None:
-        super().__init__(direct_feedthrough=False)
+        super().__init__(
+            direct_feedthrough=False,
+            description="Continuous integrator used to show interaction between sampled and continuous logic.",
+        )
 
     def initial_continuous_state(self):
         return 0.0

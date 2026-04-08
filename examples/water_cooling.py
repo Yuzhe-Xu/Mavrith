@@ -20,7 +20,11 @@ class RoomTemperatureSource(Block):
     outputs = (PortSpec.output("room_temp", spec=FLOAT_SCALAR),)
 
     def __init__(self, room_temperature: float) -> None:
-        super().__init__(direct_feedthrough=False)
+        super().__init__(
+            direct_feedthrough=False,
+            parameters={"room_temperature": room_temperature},
+            description="Fixed ambient temperature source for the cooling model.",
+        )
         self.room_temperature = room_temperature
 
     def output(self, ctx, inputs):
@@ -37,7 +41,10 @@ class TemperatureDifference(Block):
     outputs = (PortSpec.output("delta_t", spec=FLOAT_SCALAR),)
 
     def __init__(self) -> None:
-        super().__init__(direct_feedthrough=True)
+        super().__init__(
+            direct_feedthrough=True,
+            description="Computes water minus room temperature as the cooling delta.",
+        )
 
     def output(self, ctx, inputs):
         return inputs["water_temp"] - inputs["room_temp"]
@@ -50,7 +57,14 @@ class CoolingCup(ContinuousBlock):
     outputs = (PortSpec.output("water_temp", spec=FLOAT_SCALAR),)
 
     def __init__(self, initial_temperature: float, cooling_rate: float) -> None:
-        super().__init__(direct_feedthrough=False)
+        super().__init__(
+            direct_feedthrough=False,
+            parameters={
+                "initial_temperature": initial_temperature,
+                "cooling_rate": cooling_rate,
+            },
+            description="First-order cooling plant with temperature as the continuous state.",
+        )
         self.initial_temperature = initial_temperature
         self.cooling_rate = cooling_rate
 

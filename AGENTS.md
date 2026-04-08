@@ -20,6 +20,7 @@ It provides:
 - fixed-step simulation
 - continuous-state integration through SciPy
 - observer hooks for collecting results
+- AI-oriented graph/detail manifest export for LLM navigation
 
 It does **not** provide:
 
@@ -43,6 +44,7 @@ from pylink import (
     ContinuousBlock,
     Diagnostic,
     DiscreteBlock,
+    ExportResult,
     PortSpec,
     SignalSpec,
     SimulationConfig,
@@ -52,11 +54,53 @@ from pylink import (
     Subsystem,
     System,
     ValidationReport,
+    build_detail_manifest,
+    build_graph_manifest,
+    write_manifest_bundle,
 )
 ```
 
 Do not import from internal modules such as `pylink.core` unless the caller
 explicitly asks for internals.
+
+## AI manifest export workflow
+
+`pylink` now supports a derived AI-facing manifest layer. The Python model
+remains the source of truth.
+
+Use this workflow:
+
+- write or update the model in Python
+- keep human-authored semantics close to the code with `description=...`
+- expose stable tunable metadata with `parameters=...`
+- generate AI-facing manifests explicitly when needed
+
+Important rules:
+
+- `build_graph_manifest(system)` returns a topology-first manifest as a Python `dict`
+- `build_detail_manifest(system, path=..., config=...)` returns one detail shard as a Python `dict`
+- `write_manifest_bundle(system, out_dir)` writes `graph.yaml`, `detail/index.yaml`, and per-component detail YAML files
+- `validate()`, `compile()`, and `run()` do **not** write manifest files
+- graph/detail YAML is a derived view for humans and LLMs, not a second modeling DSL
+- prefer `parameters=...` as the stable exported parameter contract; inferred instance attributes are only a best-effort fallback
+- prefer `description=...` on `Block(...)` and `Subsystem(...)`; if absent, block class docstrings are used as a fallback
+
+When working with an existing project that already exports manifests, prefer
+this read order:
+
+1. `graph.yaml`
+2. `detail/index.yaml`
+3. the relevant `detail/<path>.yaml` shard(s)
+4. the Python source files referenced by `instance_source` or `implementation_source`
+
+If a project also writes a config-aware root detail such as
+`detail/system.runtime.yaml`, read it after the relevant detail shard and before
+opening source files when execution order, rate groups, or time-grid behavior
+matter.
+
+When updating a model for a user, refresh manifests explicitly after meaningful
+topology, port, parameter, or description changes so the AI-facing view stays in
+sync with the Python source of truth.
 
 ## Core modeling rules
 
@@ -316,6 +360,33 @@ Useful fields:
 Use `ctx.discrete_state` and `ctx.continuous_state` rather than storing mutable
 runtime state on the block instance.
 
+## Metadata for AI-facing exports
+
+When a block or subsystem is externally meaningful, prefer adding metadata at
+the source:
+
+```python
+class Gain(Block):
+    inputs = (PortSpec.input("u", spec=FLOAT_SCALAR),)
+    outputs = (PortSpec.output("y", spec=FLOAT_SCALAR),)
+
+    def __init__(self, gain: float) -> None:
+        super().__init__(
+            direct_feedthrough=True,
+            parameters={"gain": gain},
+            description="Algebraic gain block used by the outer-loop controller.",
+        )
+        self.gain = gain
+```
+
+Guidelines:
+
+- use `parameters=...` for stable, serializable, user-facing tuning knobs
+- do not rely on arbitrary instance attributes as the primary exported parameter contract
+- use `description=...` for human-authored semantics that an LLM should preserve
+- keep descriptions short, behavioral, and implementation-aware enough to review after code changes
+- use subsystem descriptions for reusable fragments that should be understandable without opening every internal block
+
 ## Building a system
 
 Create a `System`, add blocks or `Subsystem` objects by unique names, then
@@ -488,12 +559,14 @@ When asked to model a system with `pylink`, follow this order:
 3. map each component to `Block`, `DiscreteBlock`, or `ContinuousBlock`
 4. declare ports explicitly, including `SignalSpec` when known
 5. decide `direct_feedthrough` correctly
-6. choose whether repeated structure should become a `Subsystem`
-7. build the `System` and any reusable `Subsystem` layers
-8. connect using exact `"<component>.<port>"` strings
-9. validate with `Simulator.validate(system, config)` and inspect diagnostics first
-10. run with `SimulationConfig`
-11. optionally add an observer for inspection
+6. add `parameters=...` and `description=...` for externally meaningful blocks or subsystems
+7. choose whether repeated structure should become a `Subsystem`
+8. build the `System` and any reusable `Subsystem` layers
+9. connect using exact `"<component>.<port>"` strings
+10. validate with `Simulator.validate(system, config)` and inspect diagnostics first
+11. run with `SimulationConfig`
+12. optionally export `graph/detail` manifests for AI navigation or review
+13. optionally add an observer for inspection
 
 ## Minimal templates
 
@@ -586,6 +659,7 @@ Do not:
   depends on current inputs
 - mutate block instance attributes as runtime state
 - write side effects inside `ContinuousBlock.derivative()`
+- treat generated graph/detail YAML as the source of truth for model behavior
 - expect plotting or GUI features from this library
 - expect algebraic loops to be solved automatically
 
@@ -596,6 +670,7 @@ When generating example code for users:
 - keep the domain logic inside clearly named custom blocks
 - add short comments explaining why a block is stateless, discrete, or continuous
 - prefer declaring `SignalSpec` on every externally meaningful signal
+- prefer `parameters=...` for exported tuning parameters and `description=...` for exported semantics
 - keep one `build_system()` function when the example is non-trivial
 - keep one `main()` entry point for runnable examples
 - print a few interpretable outputs instead of dumping raw objects
@@ -619,3 +694,7 @@ These show the intended style for:
 - continuous-time modeling
 - vector-valued signals and multi-output plants
 - actuator saturation and disturbance rejection
+
+For manifest export workflow examples, also see:
+
+- `examples/export_water_cooling_manifest.py`
