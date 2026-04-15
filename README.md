@@ -42,7 +42,7 @@ print(Simulator().run(system, SimulationConfig(0, 0.2, 0.1)).final_outputs["src"
 
 ## Community And Docs
 
-- Discord: coming soon; use Discussions until a public invite is available.
+- Discord: https://discord.gg/xWpS23M35
 - Discussions: https://github.com/Yuzhe-Xu/Mavrith/discussions
 - Docs: open the static [docs site](docs/index.html), ready to publish from
   GitHub Pages using the repository's `/docs` folder.
