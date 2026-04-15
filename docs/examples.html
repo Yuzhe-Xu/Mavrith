@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mavrith Docs | Examples</title>
+    <meta
+      name="description"
+      content="Runnable Mavrith examples for closed-loop control, continuous processes, multirate timing, and AI manifest export."
+    >
+    <link rel="stylesheet" href="assets/styles.css">
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="index.html">
+          <span class="brand-mark">M</span>
+          <span>Mavrith Docs</span>
+        </a>
+        <nav class="top-nav" aria-label="Main navigation">
+          <a href="index.html">Quickstart</a>
+          <a href="core-concepts.html">Core concepts</a>
+          <a href="examples.html" aria-current="page">Examples</a>
+          <a href="ai-workflow.html">AI workflow guide</a>
+        </nav>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="side-nav" aria-label="Page sections">
+        <strong>Examples</strong>
+        <a href="#run">Run examples</a>
+        <a href="#pick">Pick a starting point</a>
+        <a href="#modify">Common modifications</a>
+      </aside>
+
+      <main>
+        <p class="eyebrow">Examples</p>
+        <h1>Use the repository examples as runnable documentation.</h1>
+        <p class="lede">
+          Each example keeps domain behavior in custom blocks, builds a system
+          in Python, validates before running, and prints interpretable outputs.
+        </p>
+
+        <section id="run">
+          <h2>Run Examples From The Repository</h2>
+          <p>
+            Install development dependencies or point Python at <code>src</code>
+            before running the examples directly.
+          </p>
+          <pre><code class="language-powershell">uv sync --extra dev --extra yaml
+$env:PYTHONPATH = "src"
+python -m examples.closed_loop
+python -m examples.cruise_control
+python examples/export_water_cooling_manifest.py</code></pre>
+        </section>
+
+        <section id="pick">
+          <h2>Pick A Starting Point</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Example</th>
+                  <th>Use it for</th>
+                  <th>Run command</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>examples/closed_loop.py</code></td>
+                  <td>Basic setpoint, sampled controller, continuous plant, and feedback.</td>
+                  <td><code>python -m examples.closed_loop</code></td>
+                </tr>
+                <tr>
+                  <td><code>examples/water_cooling.py</code></td>
+                  <td>Simple continuous-time process modeling.</td>
+                  <td><code>python -m examples.water_cooling</code></td>
+                </tr>
+                <tr>
+                  <td><code>examples/cruise_control.py</code></td>
+                  <td>PI control, saturation, nonlinear drag, and grade disturbance.</td>
+                  <td><code>python -m examples.cruise_control</code></td>
+                </tr>
+                <tr>
+                  <td><code>examples/vehicle_path_tracking.py</code></td>
+                  <td>Vector signals, state feedback, steering saturation, and recovery.</td>
+                  <td><code>python -m examples.vehicle_path_tracking</code></td>
+                </tr>
+                <tr>
+                  <td><code>examples/mass_spring_damper.py</code></td>
+                  <td>Multi-output plants, sampled PD control, and settling behavior.</td>
+                  <td><code>python -m examples.mass_spring_damper</code></td>
+                </tr>
+                <tr>
+                  <td><code>examples/multirate_offset_priority.py</code></td>
+                  <td>Discrete offsets, priorities, and cross-rate summaries.</td>
+                  <td><code>python -m examples.multirate_offset_priority</code></td>
+                </tr>
+                <tr>
+                  <td><code>examples/export_water_cooling_manifest.py</code></td>
+                  <td>Graph/detail manifest export for AI navigation.</td>
+                  <td><code>python examples/export_water_cooling_manifest.py</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="modify">
+          <h2>Common Modifications</h2>
+          <div class="cards">
+            <article class="card">
+              <h3>Swap the controller</h3>
+              <p>
+                Replace a sampled controller block while preserving ports and
+                <code>SignalSpec</code> contracts.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Add measurement effects</h3>
+              <p>
+                Insert a noise, bias, limiter, or unit-conversion block between
+                plant output and controller input.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Record selected signals</h3>
+              <p>
+                Add an observer that implements <code>on_step(snapshot)</code>
+                and stores only the values needed for review.
+              </p>
+            </article>
+          </div>
+          <div class="callout">
+            <strong>After timing changes:</strong> update <code>sample_time</code>,
+            <code>offset</code>, and <code>dt</code> together, then run
+            <code>Simulator.validate(...)</code> before simulation.
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <footer class="page-footer">
+      Next: <a href="ai-workflow.html">export manifests for AI review</a>.
+    </footer>
+  </body>
+</html>

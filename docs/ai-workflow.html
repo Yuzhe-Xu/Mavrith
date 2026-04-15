@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mavrith Docs | AI Workflow Guide</title>
+    <meta
+      name="description"
+      content="AI-native workflow for generating, validating, exporting, and reviewing Mavrith models."
+    >
+    <link rel="stylesheet" href="assets/styles.css">
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="index.html">
+          <span class="brand-mark">M</span>
+          <span>Mavrith Docs</span>
+        </a>
+        <nav class="top-nav" aria-label="Main navigation">
+          <a href="index.html">Quickstart</a>
+          <a href="core-concepts.html">Core concepts</a>
+          <a href="examples.html">Examples</a>
+          <a href="ai-workflow.html" aria-current="page">AI workflow guide</a>
+        </nav>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="side-nav" aria-label="Page sections">
+        <strong>AI workflow</strong>
+        <a href="#source">Source of truth</a>
+        <a href="#metadata">Metadata</a>
+        <a href="#export">Export manifests</a>
+        <a href="#read">Read order</a>
+        <a href="#loop">Refresh loop</a>
+      </aside>
+
+      <main>
+        <p class="eyebrow">AI workflow guide</p>
+        <h1>Keep model behavior in Python and give agents a smaller map to read.</h1>
+        <p class="lede">
+          Mavrith's manifest layer is derived from the Python model. It helps AI
+          agents inspect topology, parameters, source references, descriptions,
+          and execution summaries without turning YAML into a modeling DSL.
+        </p>
+
+        <section id="source">
+          <h2>Python Is The Source Of Truth</h2>
+          <p>
+            Agents should write or patch Python blocks and systems first. The
+            graph/detail YAML files are review artifacts, not inputs that drive
+            simulation. <code>validate()</code>, <code>compile()</code>, and
+            <code>run()</code> never write manifest files.
+          </p>
+        </section>
+
+        <section id="metadata">
+          <h2>Keep Semantics Near The Code</h2>
+          <p>
+            Use <code>parameters=...</code> for stable, serializable tuning
+            knobs and <code>description=...</code> for human-authored semantics
+            that should survive AI edits.
+          </p>
+          <pre><code class="language-python">class Gain(Block):
+    inputs = (PortSpec.input("u", spec=FLOAT),)
+    outputs = (PortSpec.output("y", spec=FLOAT),)
+
+    def __init__(self, gain: float) -> None:
+        super().__init__(
+            direct_feedthrough=True,
+            parameters={"gain": gain},
+            description="Algebraic gain used by the outer-loop controller.",
+        )
+        self.gain = gain</code></pre>
+        </section>
+
+        <section id="export">
+          <h2>Export Graph And Detail Manifests</h2>
+          <p>
+            Install YAML support and call <code>write_manifest_bundle()</code>
+            explicitly after meaningful topology, port, parameter, or
+            description changes.
+          </p>
+          <pre><code class="language-python">from mavrith import SimulationConfig, build_detail_manifest, write_manifest_bundle
+
+bundle = write_manifest_bundle(system, ".mavrith-ai")
+runtime_detail = build_detail_manifest(
+    system,
+    config=SimulationConfig(start=0.0, stop=1.0, dt=0.1),
+)</code></pre>
+          <ul class="compact-list">
+            <li><code>graph.yaml</code> stays topology-first and lightweight.</li>
+            <li><code>detail/index.yaml</code> lists every detail shard.</li>
+            <li><code>detail/&lt;path&gt;.yaml</code> stores ports, parameters, sources, and fingerprints.</li>
+            <li>A root runtime detail can include execution order, rate groups, and time-grid behavior.</li>
+          </ul>
+        </section>
+
+        <section id="read">
+          <h2>Recommended AI Read Order</h2>
+          <ol class="steps">
+            <li>Open <code>graph.yaml</code> to understand the topology.</li>
+            <li>Open <code>detail/index.yaml</code> to choose relevant shards.</li>
+            <li>Open only the needed <code>detail/&lt;path&gt;.yaml</code> files.</li>
+            <li>Open Python source from <code>instance_source</code> or <code>implementation_source</code>.</li>
+            <li>Read runtime detail when execution order or timing behavior matters.</li>
+          </ol>
+        </section>
+
+        <section id="loop">
+          <h2>Agent Edit Loop</h2>
+          <div class="cards">
+            <article class="card">
+              <h3>1. Patch Python</h3>
+              <p>
+                Change custom blocks, systems, ports, descriptions, or
+                parameters in source files.
+              </p>
+            </article>
+            <article class="card">
+              <h3>2. Validate</h3>
+              <p>
+                Run <code>Simulator.validate(...)</code> and repair diagnostics
+                before running a simulation.
+              </p>
+            </article>
+            <article class="card">
+              <h3>3. Refresh manifests</h3>
+              <p>
+                Re-export graph/detail files so review artifacts match the
+                Python source of truth.
+              </p>
+            </article>
+          </div>
+          <div class="callout">
+            <strong>Review hint:</strong> when implementation fingerprints change
+            but description text does not, Mavrith can mark descriptions as
+            <code>review_recommended</code>.
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <footer class="page-footer">
+      Start again from the <a href="index.html">Quickstart</a>.
+    </footer>
+  </body>
+</html>

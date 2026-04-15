@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mavrith Docs | Quickstart</title>
+    <meta
+      name="description"
+      content="Quickstart guide for building and validating block-based dynamic systems with Mavrith."
+    >
+    <link rel="stylesheet" href="assets/styles.css">
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="index.html">
+          <span class="brand-mark">M</span>
+          <span>Mavrith Docs</span>
+        </a>
+        <nav class="top-nav" aria-label="Main navigation">
+          <a href="index.html" aria-current="page">Quickstart</a>
+          <a href="core-concepts.html">Core concepts</a>
+          <a href="examples.html">Examples</a>
+          <a href="ai-workflow.html">AI workflow guide</a>
+        </nav>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="side-nav" aria-label="Page sections">
+        <strong>Quickstart</strong>
+        <a href="#install">Install</a>
+        <a href="#first-model">First model</a>
+        <a href="#validate">Validate and run</a>
+        <a href="#next">Next steps</a>
+      </aside>
+
+      <main>
+        <section class="hero-grid">
+          <div>
+            <p class="eyebrow">Quickstart</p>
+            <h1>Build a small block model, validate it, and run it in Python.</h1>
+            <p class="lede">
+              Mavrith keeps dynamic-system models in ordinary Python. You define
+              the domain blocks, connect explicit ports, and let the simulator
+              check structure, signal contracts, timing, and execution order.
+            </p>
+            <div class="action-row">
+              <a class="button" href="#first-model">Start the model</a>
+              <a class="button secondary" href="core-concepts.html">Read concepts</a>
+            </div>
+          </div>
+          <img
+            src="assets/mavrith-flow.png"
+            width="720"
+            height="440"
+            alt="Mavrith block flow from source to controller to plant with validation and AI manifest export."
+          >
+        </section>
+
+        <section id="install">
+          <h2>Install</h2>
+          <p>Install the runtime package from PyPI.</p>
+          <pre><code class="language-bash">pip install mavrith</code></pre>
+          <p>Install YAML support only when you want graph/detail manifest files.</p>
+          <pre><code class="language-bash">pip install "mavrith[yaml]"</code></pre>
+        </section>
+
+        <section id="first-model">
+          <h2>First Model</h2>
+          <p>
+            A block declares its ports, says whether current outputs depend on
+            current inputs, and implements <code>output()</code>. This constant
+            source has no inputs and one scalar float output.
+          </p>
+          <pre><code class="language-python">from mavrith import Block, PortSpec, SignalSpec, SimulationConfig, Simulator, System
+
+FLOAT = SignalSpec(dtype="float", shape=())
+
+
+class Constant(Block):
+    outputs = (PortSpec.output("out", spec=FLOAT),)
+
+    def __init__(self, value: float) -> None:
+        super().__init__(direct_feedthrough=False)
+        self.value = value
+
+    def output(self, ctx, inputs):
+        return self.value</code></pre>
+        </section>
+
+        <section id="validate">
+          <h2>Validate And Run</h2>
+          <p>
+            Create a <code>System</code>, add blocks by unique names, validate
+            before simulation, and inspect the result object.
+          </p>
+          <pre><code class="language-python">system = System("hello")
+system.add_block("src", Constant(1.0))
+
+config = SimulationConfig(start=0.0, stop=0.2, dt=0.1)
+simulator = Simulator()
+report = simulator.validate(system, config)
+
+if report.is_valid:
+    result = simulator.run(system, config)
+    print(result.final_outputs["src"]["out"])
+else:
+    for diagnostic in report.diagnostics:
+        print(diagnostic.code, diagnostic.message)</code></pre>
+          <div class="callout">
+            <strong>Expected output:</strong> <code>1.0</code>. For feedback,
+            connect the path through a <code>DiscreteBlock</code> or
+            <code>ContinuousBlock</code> so the compiler does not reject an
+            algebraic loop.
+          </div>
+        </section>
+
+        <section id="next">
+          <h2>Next Steps</h2>
+          <div class="cards">
+            <article class="card">
+              <h3>Learn the mental model</h3>
+              <p>
+                Read how blocks, ports, direct feedthrough, timing, and
+                validation fit together.
+              </p>
+              <a href="core-concepts.html">Open core concepts</a>
+            </article>
+            <article class="card">
+              <h3>Run real examples</h3>
+              <p>
+                Start from closed loop, cruise control, water cooling, vehicle
+                path tracking, or multirate timing.
+              </p>
+              <a href="examples.html">Open examples</a>
+            </article>
+            <article class="card">
+              <h3>Work with AI agents</h3>
+              <p>
+                Keep Python as the source of truth and export graph/detail
+                manifests for review.
+              </p>
+              <a href="ai-workflow.html">Open AI workflow</a>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <footer class="page-footer">
+      Mavrith is a lightweight Python simulation kernel for explicit,
+      reviewable block-based models.
+    </footer>
+  </body>
+</html>

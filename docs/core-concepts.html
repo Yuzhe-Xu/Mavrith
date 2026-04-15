@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mavrith Docs | Core Concepts</title>
+    <meta
+      name="description"
+      content="Core modeling concepts for Mavrith blocks, ports, systems, timing, and validation."
+    >
+    <link rel="stylesheet" href="assets/styles.css">
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="index.html">
+          <span class="brand-mark">M</span>
+          <span>Mavrith Docs</span>
+        </a>
+        <nav class="top-nav" aria-label="Main navigation">
+          <a href="index.html">Quickstart</a>
+          <a href="core-concepts.html" aria-current="page">Core concepts</a>
+          <a href="examples.html">Examples</a>
+          <a href="ai-workflow.html">AI workflow guide</a>
+        </nav>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="side-nav" aria-label="Page sections">
+        <strong>Core concepts</strong>
+        <a href="#blocks">Blocks</a>
+        <a href="#ports">Ports</a>
+        <a href="#feedthrough">Direct feedthrough</a>
+        <a href="#systems">Systems</a>
+        <a href="#time">Time</a>
+        <a href="#validation">Validation</a>
+      </aside>
+
+      <main>
+        <p class="eyebrow">Core concepts</p>
+        <h1>The model is a graph of explicit blocks with explicit signal contracts.</h1>
+        <p class="lede">
+          Mavrith supplies the simulation kernel. Domain behavior belongs in
+          custom Python blocks that declare ports, state, timing, and outputs.
+        </p>
+
+        <section id="blocks">
+          <h2>Blocks</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Base class</th>
+                  <th>Use it when</th>
+                  <th>State contract</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>Block</code></td>
+                  <td>The output is a constant or a pure algebraic transform.</td>
+                  <td>No committed runtime state is required.</td>
+                </tr>
+                <tr>
+                  <td><code>DiscreteBlock</code></td>
+                  <td>The block has sampled state updated on clock hits.</td>
+                  <td>Implement <code>initial_discrete_state()</code> and <code>update_state()</code>.</td>
+                </tr>
+                <tr>
+                  <td><code>ContinuousBlock</code></td>
+                  <td>The block state follows a differential equation.</td>
+                  <td>Implement <code>initial_continuous_state()</code> and <code>derivative()</code>.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="ports">
+          <h2>Ports And SignalSpec</h2>
+          <p>
+            Ports are declared as class attributes with <code>PortSpec</code>.
+            Use <code>SignalSpec</code> when a signal has a known dtype and
+            shape. If both ends declare dtype or shape, they must match exactly.
+          </p>
+          <pre><code class="language-python">FLOAT = SignalSpec(dtype="float", shape=())
+VECTOR3 = SignalSpec(dtype="float", shape=(3,))
+
+class Gain(Block):
+    inputs = (PortSpec.input("u", spec=FLOAT),)
+    outputs = (PortSpec.output("y", spec=FLOAT),)</code></pre>
+          <ul class="compact-list">
+            <li>One input port can have only one upstream connection.</li>
+            <li>One output port can fan out to many inputs.</li>
+            <li>Unspecified dtype or shape acts as a wildcard.</li>
+            <li>Mavrith does not add implicit casts, broadcasting, or promotion.</li>
+          </ul>
+        </section>
+
+        <section id="feedthrough">
+          <h2>Direct Feedthrough</h2>
+          <p>
+            <code>direct_feedthrough</code> tells the compiler whether the
+            current output depends on current inputs.
+          </p>
+          <div class="cards">
+            <article class="card">
+              <h3>Use True</h3>
+              <p>
+                The block reads current inputs in <code>output()</code>, such
+                as adders, gains, subtractors, and routing logic.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Use False</h3>
+              <p>
+                The block output comes from stored state or fixed parameters,
+                such as constants, sampled controllers, and continuous plants.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Feedback rule</h3>
+              <p>
+                Feedback through only direct-feedthrough blocks is an algebraic
+                loop. Put state in the path to make the loop executable.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="systems">
+          <h2>Systems And Subsystems</h2>
+          <p>
+            A <code>System</code> owns named blocks or subsystems and directional
+            connections written as <code>"component.port"</code>. A
+            <code>Subsystem</code> exposes a clean boundary while keeping
+            reusable internal structure close to the code.
+          </p>
+          <pre><code class="language-python">system = System("demo")
+system.add_block("source", Constant(1.0))
+system.add_block("plant", Integrator(initial=0.0))
+system.connect("source.out", "plant.u")</code></pre>
+        </section>
+
+        <section id="time">
+          <h2>Time And Execution</h2>
+          <p>
+            Simulation is fixed-step and deterministic. Discrete blocks declare
+            <code>sample_time</code>, optional <code>offset</code>, and optional
+            <code>priority</code>. Continuous blocks are integrated through the
+            configured solver between fixed time points.
+          </p>
+          <ol class="steps">
+            <li>Evaluate visible outputs from committed state at the current time.</li>
+            <li>Run discrete rate groups that hit the current time, in priority order.</li>
+            <li>Re-evaluate downstream direct-feedthrough logic after each commit.</li>
+            <li>Record the visible snapshot and advance continuous state one step.</li>
+          </ol>
+        </section>
+
+        <section id="validation">
+          <h2>Validation</h2>
+          <p>
+            <code>Simulator.validate(system, config)</code> checks model
+            structure without starting the simulation. Reports include stable
+            diagnostic codes, precise locations, short suggestions, execution
+            order, rate groups, cross-rate warnings, and signal metadata.
+          </p>
+          <div class="callout">
+            <strong>Use validation as the edit loop.</strong> Build or patch the
+            Python model, validate, inspect diagnostics, then run once the report
+            is valid.
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <footer class="page-footer">
+      Next: <a href="examples.html">choose a runnable example</a>.
+    </footer>
+  </body>
+</html>
