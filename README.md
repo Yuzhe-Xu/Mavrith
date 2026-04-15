@@ -1,12 +1,97 @@
 # Mavrith
 
-Mavrith is a pure Python framework for building block-based dynamic systems in code.
-It is intentionally small: the library provides the simulation kernel, while users
-define domain-specific blocks themselves.
+Mavrith is a small Python simulation kernel for block-based dynamic systems when
+you want the model, validation, and AI-readable review trail to live in code.
 
-The design goal is AI-native authoring. A Codex or Claude Code workflow should be
-able to generate a readable model, validate it, and iterate on it without needing
-an extra graphical tool or a large built-in block catalog.
+## Who It's For
+
+- Python developers and researchers building control, process, robotics, or
+  cyber-physical simulations.
+- Teams that prefer code review, tests, and explicit contracts over opaque model
+  files.
+- AI-assisted workflows where Codex, Claude Code, or another agent needs stable
+  diagnostics, source references, and graph/detail manifests.
+
+## Install And Run In 30 Seconds
+
+```bash
+pip install mavrith
+```
+
+```python
+from mavrith import Block, PortSpec, SignalSpec, SimulationConfig, Simulator, System
+F = SignalSpec(dtype="float", shape=())
+class Constant(Block):
+    outputs = (PortSpec.output("out", spec=F),)
+    def __init__(self, value):
+        super().__init__(direct_feedthrough=False); self.value = value
+    def output(self, ctx, inputs):
+        return self.value
+system = System("hello"); system.add_block("src", Constant(1.0))
+print(Simulator().run(system, SimulationConfig(0, 0.2, 0.1)).final_outputs["src"]["out"])
+```
+
+## Three Good Starting Points
+
+- Closed-loop controllers with sampled logic, continuous plants, actuator limits,
+  and disturbance rejection.
+- Physics or process models where stateless transforms, discrete state, and
+  continuous state need to run together deterministically.
+- AI-generated model drafts that should be validated, summarized, exported as
+  graph/detail manifests, and reviewed in plain Python.
+
+## Community And Docs
+
+- Discord: coming soon; use Discussions until a public invite is available.
+- Discussions: https://github.com/Yuzhe-Xu/Mavrith/discussions
+- Docs: open the static [docs site](docs/index.html), ready to publish from
+  GitHub Pages using the repository's `/docs` folder.
+
+## Why Mavrith
+
+Mavrith is not trying to be a GUI-first modeling environment. Graphical tools are
+great when diagram editing is the product, but they can make generated models
+harder to diff, test, review, and repair. Mavrith keeps the source of truth in
+Python: custom blocks hold domain logic, tests exercise behavior, and validation
+reports explain structural problems before a simulation runs.
+
+It is AI-native because the framework exposes the things coding agents need to
+reason safely: explicit ports, strict `SignalSpec` contracts, deterministic
+execution order, stable diagnostic codes, source references, human-authored
+descriptions, exported parameters, and optional graph/detail manifests. An agent
+can read the topology first, open only the relevant detail shard, patch the
+Python source, validate again, and keep the derived manifests in sync.
+
+Use Mavrith when you want a lightweight, inspectable kernel for Python-authored
+dynamic systems. It fits control prototypes, mixed continuous/discrete examples,
+agent-generated simulation code, teaching models, and repository-native
+experiments. It is not a fit if you need a no-code GUI, a large built-in block
+catalog, automatic algebraic-loop solving, high-fidelity domain libraries, or a
+full Simulink replacement.
+
+## What It Does
+
+- Pure Python DSL for building systems with explicit blocks and connections
+- Hierarchical `Subsystem` composition with compile-time flattening
+- Stateless, discrete-state, and continuous-state block base classes
+- Multi-rate discrete execution with `sample_time`, `offset`, and `priority`
+- Port dtype/shape declarations with `SignalSpec`
+- Connection validation and direct-feedthrough algebraic loop detection
+- Static and initial-runtime signal compatibility checks
+- Deterministic execution ordering
+- Fixed-step simulation with SciPy-backed continuous integration
+- Structured validation reports for AI-friendly diagnostics
+- Observer hooks for tracing and lightweight result collection
+- AI-oriented graph/detail manifest export for large-model navigation
+
+## What It Does Not Do
+
+- Ship a large built-in block library
+- Provide a GUI or drag-and-drop editor
+- Turn YAML or JSON into a second modeling DSL
+- Solve algebraic loops automatically
+- Replace the need for domain-specific block logic
+- Provide plotting, real-time execution, or domain-specific solver packages
 
 ## Installation
 
@@ -33,28 +118,6 @@ uv sync --extra dev --extra yaml
 The `examples/` directory is kept in the repository as runnable documentation.
 It is included in the source distribution for review and testing, but it is not
 installed as part of the runtime wheel.
-
-## What It Does
-
-- Pure Python DSL for building systems with blocks and connections
-- Hierarchical `Subsystem` composition with compile-time flattening
-- Stateless, discrete-state, and continuous-state block base classes
-- Multi-rate discrete execution with `sample_time`, `offset`, and `priority`
-- Port dtype/shape declarations with `SignalSpec`
-- Connection validation and direct-feedthrough algebraic loop detection
-- Static and initial-runtime signal compatibility checks
-- Deterministic execution ordering
-- Fixed-step simulation with SciPy-backed continuous integration
-- Structured validation reports for AI-friendly diagnostics
-- Observer hooks for tracing and lightweight result collection
-- AI-oriented graph/detail manifest export for large-model navigation
-
-## What It Does Not Do
-
-- Ship a large built-in block library
-- Provide a GUI or drag-and-drop editor
-- Solve algebraic loops automatically
-- Replace the need for domain-specific block logic
 
 ## Current Status
 
